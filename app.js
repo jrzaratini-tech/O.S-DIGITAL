@@ -23,7 +23,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { adminUsers, firebaseConfig } from "./firebase.config.js";
 
-const APP_VERSION = "8";
+const APP_VERSION = "9";
 const inviteToken = new URLSearchParams(window.location.search).get("convite");
 const panelToken = new URLSearchParams(window.location.search).get("painel") || inviteToken;
 const panelMode = Boolean(panelToken);
@@ -577,6 +577,39 @@ function showLogin() {
   state.invites = [];
 }
 
+function mountingTokenOf(service) {
+  return service?.assignedMountingToken || service?.assignedMountingUid || "";
+}
+
+function panelServiceRef(token, serviceId) {
+  return doc(db, invitesCollection, token, servicesCollection, serviceId);
+}
+
+function panelServiceData(service) {
+  const { id, ...data } = service;
+  return data;
+}
+
+async function writePanelMirror(serviceId, service) {
+  const token = mountingTokenOf(service);
+  if (!token) return;
+  await setDoc(panelServiceRef(token, serviceId), panelServiceData({ ...service, id: serviceId }), { merge: true });
+}
+
+async function removePanelMirror(token, serviceId) {
+  if (!token || !serviceId) return;
+  await deleteDoc(panelServiceRef(token, serviceId));
+}
+
+async function syncPanelMirrors(services) {
+  if (!currentRole().canEditService) return;
+  await Promise.all(
+    services
+      .filter((service) => mountingTokenOf(service))
+      .map((service) => writePanelMirror(service.id, service))
+  );
+}
+
 function subscribeServices() {
   if (Array.isArray(state.unsubscribeServices)) {
     state.unsubscribeServices.forEach((unsubscribe) => unsubscribe());
@@ -586,6 +619,7 @@ function subscribeServices() {
     state.unsubscribeServices = null;
   }
   if (panelMode) {
+    const panelServices = query(collection(db, invitesCollection, panelToken, servicesCollection));
     const byToken = query(collection(db, servicesCollection), where("assignedMountingToken", "==", panelToken));
     const byLegacyUid = query(collection(db, servicesCollection), where("assignedMountingUid", "==", panelToken));
     const inviteName = (state.invite?.nome || "").trim();
@@ -599,6 +633,7 @@ function subscribeServices() {
       render();
     };
     state.unsubscribeServices = [
+      onSnapshot(panelServices, sync, (error) => showAuthMessage(`Erro ao ler painel: ${error.message}`, true)),
       onSnapshot(byToken, sync, (error) => showAuthMessage(`Erro ao ler OS: ${error.message}`, true)),
       onSnapshot(byLegacyUid, sync, (error) => showAuthMessage(`Erro ao ler OS: ${error.message}`, true)),
     ].concat(byInviteName ? [onSnapshot(byInviteName, sync, (error) => showAuthMessage(`Erro ao ler OS: ${error.message}`, true))] : []);
@@ -612,6 +647,7 @@ function subscribeServices() {
     q,
     (snapshot) => {
       state.services = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+      syncPanelMirrors(state.services).catch(() => {});
       render();
     },
     (error) => showAuthMessage(`Erro ao ler OS: ${error.message}`, true)
@@ -822,12 +858,15 @@ async function removeMember(uid) {
   const updates = state.services
     .filter((service) => service.assignedMountingToken === uid)
     .map((service) =>
-      updateDoc(doc(db, servicesCollection, service.id), {
-        assignedMountingUid: "",
-        assignedMountingToken: "",
-        assignedMountingName: "",
-        updatedAt: serverTimestamp(),
-      })
+      Promise.all([
+        updateDoc(doc(db, servicesCollection, service.id), {
+          assignedMountingUid: "",
+          assignedMountingToken: "",
+          assignedMountingName: "",
+          updatedAt: serverTimestamp(),
+        }),
+        removePanelMirror(uid, service.id),
+      ])
     );
   await Promise.all(updates);
   await updateDoc(doc(db, invitesCollection, uid), {
@@ -926,8 +965,13 @@ async function saveForm(event) {
   const service = serviceFromForm(existing);
   if (existing) {
     await updateDoc(doc(db, servicesCollection, existing.id), { ...service, updatedAt: serverTimestamp() });
+    const previousToken = mountingTokenOf(existing);
+    const nextToken = mountingTokenOf(service);
+    if (previousToken && previousToken !== nextToken) await removePanelMirror(previousToken, existing.id);
+    if (nextToken) await writePanelMirror(existing.id, service);
   } else {
-    await addDoc(collection(db, servicesCollection), { ...service, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    const created = await addDoc(collection(db, servicesCollection), { ...service, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    if (mountingTokenOf(service)) await writePanelMirror(created.id, service);
   }
   resetForm();
   setView("fila");
@@ -941,6 +985,7 @@ async function deleteCurrentService() {
   const label = service?.osNumber || id;
   if (!confirm(`Excluir a ${label}?`)) return;
   await deleteDoc(doc(db, servicesCollection, id));
+  await removePanelMirror(mountingTokenOf(service), id);
   resetForm();
   setView("fila");
 }
@@ -976,6 +1021,10 @@ async function toggleStep(serviceId, group, stepId, checked) {
   };
   if (nextStatus === "Concluido" && !panelMode && state.profile.perfil !== "montagem") update.superPriority = false;
   await updateDoc(doc(db, servicesCollection, serviceId), update);
+  if (panelMode) {
+    state.services = state.services.map((item) => (item.id === serviceId ? nextService : item));
+    await updateDoc(panelServiceRef(panelToken, serviceId), { [group]: nextSteps, updatedAt: timestamp() });
+  }
 }
 
 function renderChecklist(service, group, title) {

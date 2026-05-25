@@ -58,6 +58,22 @@ service cloud.firestore {
     match /convites/{inviteId} {
       allow get: if true;
       allow list, create, update, delete: if fullAccess();
+
+      match /servicos/{serviceId} {
+        allow read: if get(/databases/$(database)/documents/convites/$(inviteId)).data.perfil == 'montagem'
+          && get(/databases/$(database)/documents/convites/$(inviteId)).data.ativo != false;
+
+        allow create, delete: if fullAccess();
+
+        allow update: if fullAccess()
+          || (
+            !signedIn()
+            && get(/databases/$(database)/documents/convites/$(inviteId)).data.perfil == 'montagem'
+            && get(/databases/$(database)/documents/convites/$(inviteId)).data.ativo != false
+            && request.resource.data.diff(resource.data).changedKeys()
+              .hasOnly(['mounting', 'updatedAt'])
+          );
+      }
     }
 
     match /servicos/{serviceId} {
