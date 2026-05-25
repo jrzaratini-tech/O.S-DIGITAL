@@ -89,6 +89,54 @@ const defaultMountingProcesses = [
 ];
 
 const workflows = {
+  "Logo em Acrilico": {
+    project: ["Arte / projeto", "Modelagem", "Usinagem CNC", "Corte laser opalino"],
+    mounting: ["Acabamento", "Embalagem"],
+  },
+  "Logo Flutuante para Montra": {
+    project: ["Arte / projeto", "Modelagem", "Usinagem CNC", "Molde de instalacao"],
+    mounting: ["Montagem da estrutura", "Acabamento", "Embalagem"],
+  },
+  "Neon LED": {
+    project: ["Arte / projeto", "Modelagem", "Usinagem CNC"],
+    mounting: ["LED / solda", "Cola quente", "Acabamento", "Embalagem"],
+  },
+  "Alto Colante": {
+    project: ["Arte / projeto"],
+    mounting: ["Acabamento", "Embalagem"],
+  },
+  "Logo 3D com LED": {
+    project: ["Arte / projeto", "Modelagem", "Usinagem CNC", "Impressao 3D", "Molde de instalacao"],
+    mounting: ["Montagem da estrutura", "Pintura interna", "LED / solda", "Cola quente", "Pintura externa", "Acabamento", "Embalagem"],
+  },
+  "Logo 3D sem LED": {
+    project: ["Arte / projeto", "Modelagem", "Usinagem CNC", "Impressao 3D", "Molde de instalacao"],
+    mounting: ["Montagem da estrutura", "Pintura externa", "Acabamento", "Embalagem"],
+  },
+  "Logo com luz lateral": {
+    project: ["Arte / projeto", "Modelagem", "Usinagem CNC", "Molde de instalacao"],
+    mounting: ["Montagem da estrutura", "Pintura interna", "LED / solda", "Cola quente", "Pintura externa", "Acabamento", "Embalagem"],
+  },
+  "Logo com luz traseira": {
+    project: ["Arte / projeto", "Modelagem", "Usinagem CNC", "Molde de instalacao"],
+    mounting: ["Montagem da estrutura", "Pintura interna", "LED / solda", "Cola quente", "Pintura externa", "Acabamento", "Embalagem"],
+  },
+  Brindes: {
+    project: ["Arte / projeto", "Modelagem"],
+    mounting: ["Impressao 3D", "Acabamento", "Embalagem"],
+  },
+  "Painel de ACM": {
+    project: ["Arte / projeto", "Modelagem", "Molde de instalacao"],
+    mounting: ["Montagem da estrutura", "Pintura externa", "Acabamento", "Embalagem"],
+  },
+  "Caixa de Luz": {
+    project: ["Arte / projeto", "Modelagem", "Corte laser opalino", "Molde de instalacao"],
+    mounting: ["Montagem da estrutura", "Pintura interna", "LED / solda", "Cola quente", "Pintura externa", "Acabamento", "Embalagem"],
+  },
+  Outro: {
+    project: ["Arte / projeto"],
+    mounting: ["Acabamento", "Embalagem"],
+  },
   "Luz Frontal": {
     project: ["Vetorizacao e Arte", "Modelagem 3D", "Impressao do Gabarito"],
     mounting: [
@@ -282,8 +330,9 @@ function setSelectedProcesses(group, labels) {
 }
 
 function resetProcessDefaults() {
-  setSelectedProcesses("project", defaultProjectProcesses);
-  setSelectedProcesses("mounting", defaultMountingProcesses);
+  const workflow = workflows[dom.productType?.value] || {};
+  setSelectedProcesses("project", workflow.project || defaultProjectProcesses);
+  setSelectedProcesses("mounting", workflow.mounting || defaultMountingProcesses);
 }
 
 function normalizeAttachment(attachment) {
@@ -822,7 +871,7 @@ function editService(id) {
   if (!service || !currentRole().canEditService) return;
   dom.editingId.value = service.id;
   dom.clientName.value = service.clientName || "";
-  dom.productType.value = service.productType || "Luz Frontal";
+  dom.productType.value = service.productType || "Logo em Acrilico";
   dom.deliveryDate.value = service.deliveryDate || todayIso();
   dom.dimensions.value = service.dimensions || "";
   dom.notes.value = service.notes || "";
@@ -1079,6 +1128,10 @@ function bindEvents() {
     renderServiceList();
   });
 
+  dom.productType.addEventListener("change", () => {
+    if (!dom.editingId.value) resetProcessDefaults();
+  });
+
   dom.statusFilter.addEventListener("change", (event) => {
     state.status = event.target.value;
     renderServiceList();
@@ -1116,7 +1169,7 @@ async function seedFirstServicesIfEmpty() {
   await addDoc(collection(db, servicesCollection), {
     osNumber: "OS-2026-X89",
     clientName: "Restaurante Gourmet S/A",
-    productType: "Luz Frontal",
+    productType: "Logo 3D com LED",
     deliveryDate: "2026-06-15",
     superPriority: true,
     dimensions: "300cm x 80cm",
@@ -1129,8 +1182,8 @@ async function seedFirstServicesIfEmpty() {
     createdByUid: state.authUser.uid,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-    project: makeSteps(workflows["Luz Frontal"].project),
-    mounting: makeSteps(workflows["Luz Frontal"].mounting),
+    project: makeSteps(workflows["Logo 3D com LED"].project),
+    mounting: makeSteps(workflows["Logo 3D com LED"].mounting),
   });
 }
 
