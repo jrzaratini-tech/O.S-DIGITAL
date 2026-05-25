@@ -80,7 +80,7 @@ service cloud.firestore {
             && request.resource.data.keys().hasAll(['inviteId', 'nome', 'email'])
             && claimableByCurrentUser(request.resource.data.inviteId)
             && request.resource.data.nome == get(/databases/$(database)/documents/convites/$(request.resource.data.inviteId)).data.nome
-            && request.resource.data.email == request.auth.token.email
+            && request.resource.data.email is string
           )
         );
 
@@ -104,7 +104,7 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).changedKeys()
             .hasOnly(['claimedUid', 'claimedEmail', 'claimedAt', 'used'])
           && request.resource.data.claimedUid == request.auth.uid
-          && request.resource.data.claimedEmail == request.auth.token.email
+          && request.resource.data.claimedEmail is string
           && request.resource.data.used == true
         );
 

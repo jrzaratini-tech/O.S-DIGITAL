@@ -24,7 +24,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { adminUsers, firebaseConfig } from "./firebase.config.js";
 
-const APP_VERSION = "13";
+const APP_VERSION = "14";
 const inviteToken = new URLSearchParams(window.location.search).get("convite");
 const panelToken = new URLSearchParams(window.location.search).get("painel") || inviteToken;
 const panelMode = Boolean(panelToken);
