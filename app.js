@@ -24,7 +24,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { adminUsers, firebaseConfig } from "./firebase.config.js";
 
-const APP_VERSION = "12";
+const APP_VERSION = "13";
 const inviteToken = new URLSearchParams(window.location.search).get("convite");
 const panelToken = new URLSearchParams(window.location.search).get("painel") || inviteToken;
 const panelMode = Boolean(panelToken);
@@ -478,7 +478,11 @@ async function createMountingProfile(user, invite) {
     inviteId: invite.id,
     createdAt: serverTimestamp(),
   };
-  await setDoc(doc(db, usersCollection, user.uid), profile);
+  const userRef = doc(db, usersCollection, user.uid);
+  const existingProfile = await getDoc(userRef);
+  if (!existingProfile.exists()) {
+    await setDoc(userRef, profile);
+  }
   await updateDoc(doc(db, invitesCollection, invite.id), {
     claimedUid: user.uid,
     claimedEmail: user.email,
@@ -528,6 +532,20 @@ async function handlePanelAuthSubmit(email, password) {
   await enterPanel(credential.user, claimedInvite);
 }
 
+async function finishExistingPanelRegistration(email, password, invite) {
+  const credential = await signInWithEmailAndPassword(auth, email, password);
+  const profile = await createMountingProfile(credential.user, invite);
+  const claimedInvite = {
+    ...invite,
+    claimedUid: credential.user.uid,
+    claimedEmail: credential.user.email,
+    used: true,
+  };
+  state.invite = claimedInvite;
+  state.profile = profile;
+  await enterPanel(credential.user, claimedInvite);
+}
+
 async function handleAuthSubmit(event) {
   event.preventDefault();
   clearAuthMessage();
@@ -537,7 +555,15 @@ async function handleAuthSubmit(event) {
 
   try {
     if (panelMode) {
-      await handlePanelAuthSubmit(email, password);
+      try {
+        await handlePanelAuthSubmit(email, password);
+      } catch (error) {
+        if (error?.code === "auth/email-already-in-use" && state.invite && !state.invite.claimedUid) {
+          await finishExistingPanelRegistration(email, password, state.invite);
+        } else {
+          throw error;
+        }
+      }
     } else {
       await signInWithEmailAndPassword(auth, email, password);
     }

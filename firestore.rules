@@ -41,6 +41,14 @@ service cloud.firestore {
         || get(/databases/$(database)/documents/convites/$(inviteId)).data.claimedUid == '';
     }
 
+    function claimableByCurrentUser(inviteId) {
+      return validMountingInvite(inviteId)
+        && (
+          unclaimedInvite(inviteId)
+          || get(/databases/$(database)/documents/convites/$(inviteId)).data.claimedUid == request.auth.uid
+        );
+    }
+
     function ownsInvite(inviteId) {
       return mountingAccess() && userDoc().inviteId == inviteId;
     }
@@ -69,9 +77,8 @@ service cloud.firestore {
           || (
             request.resource.data.perfil == 'montagem'
             && request.resource.data.ativo == true
-            && request.resource.data.inviteId is string
-            && validMountingInvite(request.resource.data.inviteId)
-            && unclaimedInvite(request.resource.data.inviteId)
+            && request.resource.data.keys().hasAll(['inviteId', 'nome', 'email'])
+            && claimableByCurrentUser(request.resource.data.inviteId)
             && request.resource.data.nome == get(/databases/$(database)/documents/convites/$(request.resource.data.inviteId)).data.nome
             && request.resource.data.email == request.auth.token.email
           )
@@ -89,7 +96,11 @@ service cloud.firestore {
           signedIn()
           && resource.data.perfil == 'montagem'
           && resource.data.ativo != false
-          && (!resource.data.keys().hasAny(['claimedUid']) || resource.data.claimedUid == '')
+          && (
+            !resource.data.keys().hasAny(['claimedUid'])
+            || resource.data.claimedUid == ''
+            || resource.data.claimedUid == request.auth.uid
+          )
           && request.resource.data.diff(resource.data).changedKeys()
             .hasOnly(['claimedUid', 'claimedEmail', 'claimedAt', 'used'])
           && request.resource.data.claimedUid == request.auth.uid
