@@ -21,6 +21,12 @@ Abra `index.html` no navegador. O app funciona sem servidor usando `localStorage
 - Login com Firebase Auth.
 - Convite nominal e exclusivo para montadores.
 - Atribuicao de OS por montador: cada montador ve apenas os proprios trabalhos.
+- Selecao manual de processos por OS para Projetista e Montagem.
+- Campo de anexos com suporte a colar prints por Ctrl+V.
+
+## CRM Print Pixel
+
+Foi localizada a pasta `C:\Users\Zaratini\OneDrive\Desktop\CRM-PRINTPIXEL`. O banco local `DATA\database\core.db` existe, mas as tabelas `events`, `pages` e `settings` estao vazias no momento da verificacao, portanto nao havia trabalhos locais para importar automaticamente.
 
 ## Próximo passo para nuvem
 

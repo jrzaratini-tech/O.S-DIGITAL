@@ -60,6 +60,34 @@ const roles = {
   },
 };
 
+const productionProcesses = [
+  "Arte / projeto",
+  "Modelagem",
+  "Usinagem CNC",
+  "Impressao 3D",
+  "Montagem da estrutura",
+  "Pintura interna",
+  "LED / solda",
+  "Cola quente",
+  "Corte laser opalino",
+  "Pintura externa",
+  "Acabamento",
+  "Molde de instalacao",
+  "Embalagem",
+];
+
+const defaultProjectProcesses = ["Arte / projeto", "Modelagem", "Usinagem CNC", "Impressao 3D", "Molde de instalacao"];
+const defaultMountingProcesses = [
+  "Montagem da estrutura",
+  "Pintura interna",
+  "LED / solda",
+  "Cola quente",
+  "Corte laser opalino",
+  "Pintura externa",
+  "Acabamento",
+  "Embalagem",
+];
+
 const workflows = {
   "Luz Frontal": {
     project: ["Vetorizacao e Arte", "Modelagem 3D", "Impressao do Gabarito"],
@@ -100,6 +128,7 @@ const state = {
   team: [],
   invites: [],
   invite: null,
+  pastedAttachments: [],
   view: "fila",
   search: "",
   status: "todos",
@@ -138,7 +167,11 @@ const dom = {
   dimensions: document.querySelector("#dimensions"),
   notes: document.querySelector("#notes"),
   attachments: document.querySelector("#attachments"),
+  pasteZone: document.querySelector("#pasteZone"),
+  attachmentPreview: document.querySelector("#attachmentPreview"),
   assignedMountingUid: document.querySelector("#assignedMountingUid"),
+  projectProcessOptions: document.querySelector("#projectProcessOptions"),
+  mountingProcessOptions: document.querySelector("#mountingProcessOptions"),
   superPriority: document.querySelector("#superPriority"),
   deleteButton: document.querySelector("#deleteButton"),
   resetFormButton: document.querySelector("#resetFormButton"),
@@ -216,6 +249,109 @@ function makeSteps(labels) {
     operator: null,
     operatorUid: null,
   }));
+}
+
+function renderProcessOptions() {
+  dom.projectProcessOptions.innerHTML = productionProcesses
+    .map((label) => processOptionHtml("project", label, defaultProjectProcesses.includes(label)))
+    .join("");
+  dom.mountingProcessOptions.innerHTML = productionProcesses
+    .map((label) => processOptionHtml("mounting", label, defaultMountingProcesses.includes(label)))
+    .join("");
+}
+
+function processOptionHtml(group, label, checked) {
+  const id = `${group}-${slugify(label)}`;
+  return `
+    <label class="process-option" for="${id}">
+      <input id="${id}" type="checkbox" data-process-group="${group}" value="${label}" ${checked ? "checked" : ""}>
+      <span>${label}</span>
+    </label>
+  `;
+}
+
+function getSelectedProcesses(group) {
+  return Array.from(document.querySelectorAll(`[data-process-group="${group}"]:checked`)).map((input) => input.value);
+}
+
+function setSelectedProcesses(group, labels) {
+  const selected = new Set(labels);
+  document.querySelectorAll(`[data-process-group="${group}"]`).forEach((input) => {
+    input.checked = selected.has(input.value);
+  });
+}
+
+function resetProcessDefaults() {
+  setSelectedProcesses("project", defaultProjectProcesses);
+  setSelectedProcesses("mounting", defaultMountingProcesses);
+}
+
+function normalizeAttachment(attachment) {
+  if (typeof attachment === "string") {
+    return { name: attachment, source: "file", dataUrl: null };
+  }
+  return attachment;
+}
+
+function renderAttachmentPreview(existing = []) {
+  const attachments = [...existing.map(normalizeAttachment), ...state.pastedAttachments];
+  if (!attachments.length) {
+    dom.attachmentPreview.innerHTML = '<span class="field-help">Nenhum anexo adicionado.</span>';
+    return;
+  }
+  dom.attachmentPreview.innerHTML = attachments
+    .map((item, index) => {
+      const image = item.dataUrl ? `<img src="${item.dataUrl}" alt="${item.name}">` : "";
+      return `
+        <div class="attachment-chip">
+          ${image}
+          <span>${item.name}</span>
+          ${index >= existing.length ? `<button class="small-button" data-action="remove-paste" data-id="${index - existing.length}" type="button">Remover</button>` : ""}
+        </div>
+      `;
+    })
+    .join("");
+}
+
+async function handlePaste(event) {
+  const item = Array.from(event.clipboardData?.items || []).find((entry) => entry.type.startsWith("image/"));
+  if (!item) return;
+  event.preventDefault();
+  const file = item.getAsFile();
+  if (!file) return;
+  const attachment = await compressImageAttachment(file);
+  state.pastedAttachments.push(attachment);
+  renderAttachmentPreview();
+}
+
+function compressImageAttachment(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const maxSide = 1200;
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
+        resolve({
+          name: `print-orientacao-${new Date().toISOString().replace(/[:.]/g, "-")}.jpg`,
+          source: "paste",
+          type: "image/jpeg",
+          size: Math.round((dataUrl.length * 3) / 4),
+          dataUrl,
+        });
+      };
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 function currentRole() {
@@ -640,12 +776,22 @@ function resetForm() {
   dom.editingId.value = "";
   dom.deliveryDate.value = todayIso();
   dom.deleteButton.hidden = true;
+  state.pastedAttachments = [];
+  resetProcessDefaults();
+  renderAttachmentPreview();
   setFieldLocking();
 }
 
 function serviceFromForm(existing) {
   const type = dom.productType.value;
+  const projectLabels = getSelectedProcesses("project");
+  const mountingLabels = getSelectedProcesses("mounting");
   const keepSteps = existing && existing.productType === type;
+  const keepByLabel = (steps, labels) =>
+    labels.map((label) => {
+      const previous = (steps || []).find((step) => step.label === label);
+      return previous || makeSteps([label])[0];
+    });
   return {
     osNumber: existing?.osNumber || `OS-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
     clientName: dom.clientName.value.trim(),
@@ -654,7 +800,11 @@ function serviceFromForm(existing) {
     superPriority: dom.superPriority.checked,
     dimensions: dom.dimensions.value.trim(),
     notes: dom.notes.value.trim(),
-    attachments: [...(existing?.attachments || []), ...Array.from(dom.attachments.files || []).map((file) => file.name)],
+    attachments: [
+      ...(existing?.attachments || []).map(normalizeAttachment),
+      ...Array.from(dom.attachments.files || []).map((file) => ({ name: file.name, source: "file", dataUrl: null })),
+      ...state.pastedAttachments,
+    ],
     assignedMountingUid: dom.assignedMountingUid.value || "",
     assignedMountingToken: dom.assignedMountingUid.value || "",
     assignedMountingName: state.team.find((member) => member.token === dom.assignedMountingUid.value)?.nome || "",
@@ -662,8 +812,8 @@ function serviceFromForm(existing) {
     createdByUid: existing?.createdByUid || state.authUser.uid,
     createdAt: existing?.createdAt || timestamp(),
     updatedAt: timestamp(),
-    project: keepSteps ? existing.project : makeSteps(workflows[type].project),
-    mounting: keepSteps ? existing.mounting : makeSteps(workflows[type].mounting),
+    project: keepSteps ? keepByLabel(existing.project, projectLabels) : makeSteps(projectLabels),
+    mounting: keepSteps ? keepByLabel(existing.mounting, mountingLabels) : makeSteps(mountingLabels),
   };
 }
 
@@ -676,6 +826,10 @@ function editService(id) {
   dom.deliveryDate.value = service.deliveryDate || todayIso();
   dom.dimensions.value = service.dimensions || "";
   dom.notes.value = service.notes || "";
+  state.pastedAttachments = [];
+  setSelectedProcesses("project", (service.project || []).map((step) => step.label));
+  setSelectedProcesses("mounting", (service.mounting || []).map((step) => step.label));
+  renderAttachmentPreview(service.attachments || []);
   renderMountingSelect();
   dom.assignedMountingUid.value = service.assignedMountingUid || "";
   dom.superPriority.checked = Boolean(service.superPriority);
@@ -732,7 +886,8 @@ async function toggleStep(serviceId, group, stepId, checked) {
       done: checked,
       timestamp: checked ? timestamp() : null,
       operator: checked ? state.profile.nome : null,
-      operatorUid: checked ? state.authUser.uid : null,
+      operatorUid: checked ? state.authUser?.uid || null : null,
+      operatorToken: checked ? state.profile.painelToken || null : null,
     };
   });
   const nextService = { ...service, [group]: nextSteps };
@@ -794,7 +949,7 @@ function showDetail(id) {
       <div class="detail-box"><strong>Medidas</strong><br>${service.dimensions || "Nao informado"}</div>
       <div class="detail-box wide"><strong>Responsavel pela montagem</strong><br>${service.assignedMountingName || "Sem montador definido"}</div>
       <div class="detail-box wide"><strong>Observacoes</strong><br>${service.notes || "Sem observacoes"}</div>
-      <div class="detail-box wide"><strong>Arquivos</strong><br>${service.attachments?.length ? service.attachments.join(", ") : "Nenhum arquivo registrado"}</div>
+      <div class="detail-box wide"><strong>Anexos</strong><br>${renderAttachmentsDetail(service.attachments || [])}</div>
       ${renderChecklist(service, "project", "Fase 1 - Projeto")}
       ${renderChecklist(service, "mounting", "Fase 2 - Montagem")}
     </div>
@@ -806,6 +961,21 @@ function showDetail(id) {
     });
   });
   if (!dom.dialog.open) dom.dialog.showModal();
+}
+
+function renderAttachmentsDetail(attachments) {
+  if (!attachments.length) return "Nenhum arquivo registrado";
+  return `
+    <div class="attachment-detail-grid">
+      ${attachments
+        .map(normalizeAttachment)
+        .map((item) => {
+          const image = item.dataUrl ? `<img src="${item.dataUrl}" alt="${item.name}">` : "";
+          return `<div class="attachment-detail">${image}<span>${item.name}</span></div>`;
+        })
+        .join("")}
+    </div>
+  `;
 }
 
 function setView(name) {
@@ -921,9 +1091,17 @@ function bindEvents() {
     if (action === "open") showDetail(id);
     if (action === "edit") editService(id);
     if (action === "remove-member") removeMember(id);
+    if (action === "remove-paste") {
+      state.pastedAttachments.splice(Number(id), 1);
+      const existing = state.services.find((service) => service.id === dom.editingId.value)?.attachments || [];
+      renderAttachmentPreview(existing);
+    }
   });
 
   dom.form.addEventListener("submit", saveForm);
+  dom.form.addEventListener("paste", handlePaste);
+  dom.pasteZone.addEventListener("paste", handlePaste);
+  dom.pasteZone.addEventListener("click", () => dom.pasteZone.focus());
   dom.inviteForm.addEventListener("submit", createInvite);
   dom.deleteButton.addEventListener("click", deleteCurrentService);
   dom.resetFormButton.addEventListener("click", resetForm);
@@ -1003,9 +1181,12 @@ function initFirebase() {
 }
 
 function init() {
+  renderProcessOptions();
   bindEvents();
   dom.deliveryDate.value = todayIso();
   dom.monthPicker.value = todayIso().slice(0, 7);
+  resetProcessDefaults();
+  renderAttachmentPreview();
   initFirebase();
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch(() => {});

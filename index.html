@@ -115,14 +115,27 @@
               <label class="wide">
                 Arquivos de referencia
                 <input id="attachments" type="file" multiple>
-                <span class="field-help">Os nomes ficam registrados na OS. Para arquivos reais, ative Firebase Storage depois.</span>
+                <span class="field-help">Cole prints com Ctrl+V nesta tela ou selecione arquivos leves.</span>
               </label>
+              <div id="pasteZone" class="paste-zone wide" tabindex="0">
+                <strong>Colar print de orientacao</strong>
+                <span>Clique aqui e use Ctrl+V para anexar uma imagem compactada.</span>
+              </div>
+              <div id="attachmentPreview" class="attachment-preview wide"></div>
               <label class="wide">
                 Responsavel pela montagem
                 <select id="assignedMountingUid">
                   <option value="">Sem montador definido</option>
                 </select>
               </label>
+              <fieldset class="process-picker wide">
+                <legend>Processos do Projetista</legend>
+                <div id="projectProcessOptions" class="process-grid"></div>
+              </fieldset>
+              <fieldset class="process-picker wide">
+                <legend>Processos da Montagem</legend>
+                <div id="mountingProcessOptions" class="process-grid"></div>
+              </fieldset>
               <label class="switch-row">
                 <input id="superPriority" type="checkbox">
                 <span>Super Prioridade de Producao</span>
