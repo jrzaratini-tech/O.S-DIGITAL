@@ -14,9 +14,9 @@ Nao ha etapa de build. O Render serve diretamente os arquivos `index.html`, `sty
 
 - Greice: perfil Comercial, acesso total.
 - Zaratini: perfil Projetista, acesso total.
-- Montagem: link padrao da equipe e login com e-mail/senha criados na aba Equipe.
+- Montagem: link padrao da equipe e login com e-mail/senha cadastrados no Firebase.
 
-Greice/Zaratini criam o usuario da montagem na aba Equipe, usando nome, e-mail e senha. O colaborador recebe o link padrao da equipe e seus dados de acesso. Ao logar, ve apenas as O.S atribuidas ao proprio UID.
+O colaborador recebe o link padrao da equipe e seus dados de acesso. Ao logar, ve apenas as O.S atribuidas ao proprio UID. A aba Equipe mostra o link universal e a lista de colaboradores cadastrados.
 
 ## Firebase
 

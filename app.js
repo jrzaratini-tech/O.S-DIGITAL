@@ -23,7 +23,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { adminUsers, firebaseConfig } from "./firebase.config.js";
 
-const APP_VERSION = "16";
+const APP_VERSION = "17";
 const urlParams = new URLSearchParams(window.location.search);
 const teamLoginMode = urlParams.get("equipe") === "1" || urlParams.get("montagem") === "1";
 const servicesCollection = "servicos";
@@ -202,10 +202,6 @@ const dom = {
   metricsGrid: document.querySelector("#metricsGrid"),
   auditList: document.querySelector("#auditList"),
   exportButton: document.querySelector("#exportButton"),
-  inviteForm: document.querySelector("#inviteForm"),
-  inviteName: document.querySelector("#inviteName"),
-  inviteEmail: document.querySelector("#inviteEmail"),
-  invitePassword: document.querySelector("#invitePassword"),
   inviteResult: document.querySelector("#inviteResult"),
   teamList: document.querySelector("#teamList"),
   dialog: document.querySelector("#serviceDialog"),
@@ -786,98 +782,6 @@ function selectedMountingMember(token) {
   return state.team.find((member) => member.token === token);
 }
 
-function generatePassword() {
-  const code = crypto.getRandomValues(new Uint32Array(1))[0] % 9000 + 1000;
-  return `Print@${code}`;
-}
-
-async function createAuthUser(email, password) {
-  const response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${firebaseConfig.apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password, returnSecureToken: false }),
-  });
-  const payload = await response.json();
-  if (!response.ok) {
-    const message = payload?.error?.message || "Nao foi possivel criar o usuario no Firebase Auth.";
-    if (message === "EMAIL_EXISTS") return signInAuthUser(email, password);
-    if (message.includes("WEAK_PASSWORD")) throw new Error("A senha precisa ter pelo menos 6 caracteres.");
-    throw new Error(message);
-  }
-  return payload.localId;
-}
-
-async function signInAuthUser(email, password) {
-  const response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${firebaseConfig.apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password, returnSecureToken: false }),
-  });
-  const payload = await response.json();
-  if (!response.ok) {
-    const message = payload?.error?.message || "Este e-mail ja existe. Informe a senha correta ou use outro e-mail.";
-    if (message === "INVALID_LOGIN_CREDENTIALS" || message === "INVALID_PASSWORD") {
-      throw new Error("Este e-mail ja existe no Firebase, mas a senha informada nao confere.");
-    }
-    throw new Error(message);
-  }
-  return payload.localId;
-}
-
-async function createTeamUser(event) {
-  event.preventDefault();
-  if (!currentRole().canEditService) return;
-  const name = dom.inviteName.value.trim();
-  const email = dom.inviteEmail.value.trim().toLowerCase();
-  const password = dom.invitePassword.value.trim() || generatePassword();
-  if (!name || !email || !password) return;
-  const button = dom.inviteForm.querySelector("button[type='submit']");
-  button.disabled = true;
-  button.textContent = "Criando...";
-  try {
-    const uid = await createAuthUser(email, password);
-    const profile = {
-      nome: name,
-      email,
-      perfil: "montagem",
-      ativo: true,
-      inviteId: uid,
-      createdAt: serverTimestamp(),
-      createdByUid: state.authUser.uid,
-      createdByName: state.profile.nome,
-    };
-    await setDoc(doc(db, usersCollection, uid), profile);
-    await setDoc(doc(db, invitesCollection, uid), {
-      ...profile,
-      claimedUid: uid,
-      claimedEmail: email,
-      used: true,
-    });
-    const link = buildTeamLoginLink();
-    dom.inviteResult.hidden = false;
-    dom.inviteResult.innerHTML = `
-      <strong>Usuario criado: ${name}</strong><br>
-      <span>Link padrao: ${link}</span><br>
-      <span>E-mail: ${email}</span><br>
-      <span>Senha: ${password}</span>
-    `;
-    try {
-      await navigator.clipboard.writeText(`Link: ${link}\nE-mail: ${email}\nSenha: ${password}`);
-    } catch {
-      // Clipboard can be blocked by the browser; the credentials remain visible.
-    }
-    dom.inviteName.value = "";
-    dom.inviteEmail.value = "";
-    dom.invitePassword.value = "";
-  } catch (error) {
-    dom.inviteResult.hidden = false;
-    dom.inviteResult.textContent = `Nao foi possivel criar o usuario: ${error.message}`;
-  } finally {
-    button.disabled = false;
-    button.textContent = "Criar usuario";
-  }
-}
-
 async function removeMember(uid) {
   if (!currentRole().canDelete) return;
   const member = state.team.find((item) => item.uid === uid);
@@ -1284,36 +1188,10 @@ function bindEvents() {
   dom.form.addEventListener("paste", handlePaste);
   dom.pasteZone.addEventListener("paste", handlePaste);
   dom.pasteZone.addEventListener("click", () => dom.pasteZone.focus());
-  dom.inviteForm.addEventListener("submit", createTeamUser);
   dom.deleteButton.addEventListener("click", deleteCurrentService);
   dom.resetFormButton.addEventListener("click", resetForm);
   dom.monthPicker.addEventListener("change", renderCalendar);
   dom.exportButton.addEventListener("click", exportJson);
-}
-
-async function seedFirstServicesIfEmpty() {
-  if (!currentRole().canCreate) return;
-  const snapshot = await getDocs(collection(db, servicesCollection));
-  if (!snapshot.empty) return;
-  await addDoc(collection(db, servicesCollection), {
-    osNumber: "OS-2026-X89",
-    clientName: "Restaurante Gourmet S/A",
-    productType: "Logo 3D com LED",
-    deliveryDate: "2026-06-15",
-    superPriority: true,
-    dimensions: "300cm x 80cm",
-    notes: "Fixacao em estrutura metalica existente.",
-    attachments: ["logo-restaurante.svg", "fachada-referencia.jpg"],
-    assignedMountingUid: "",
-    assignedMountingToken: "",
-    assignedMountingName: "",
-    createdBy: state.profile.nome,
-    createdByUid: state.authUser.uid,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-    project: makeSteps(workflows["Logo 3D com LED"].project),
-    mounting: makeSteps(workflows["Logo 3D com LED"].mounting),
-  });
 }
 
 function initFirebase() {
@@ -1338,7 +1216,6 @@ function initFirebase() {
       state.profile = await ensureUserProfile(user);
       showApp();
       resetForm();
-      await seedFirstServicesIfEmpty();
       subscribeTeam();
       subscribeServices();
     } catch (error) {
