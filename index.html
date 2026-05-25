@@ -159,17 +159,25 @@
           <section id="view-equipe" class="view" aria-labelledby="teamTitle">
             <div class="section-head">
               <div>
-                <p class="eyebrow">Convites</p>
+                <p class="eyebrow">Acessos</p>
                 <h2 id="teamTitle">Equipe de montagem</h2>
               </div>
             </div>
             <form id="inviteForm" class="form-grid">
               <label>
                 Nome do colaborador
-                <input id="inviteName" required placeholder="Ex.: Carlos da montagem">
+                <input id="inviteName" required placeholder="Ex.: Eloisa">
+              </label>
+              <label>
+                E-mail de acesso
+                <input id="inviteEmail" required type="email" placeholder="eloisa@printpixel.local">
+              </label>
+              <label>
+                Senha
+                <input id="invitePassword" type="text" placeholder="Deixe em branco para gerar automaticamente">
               </label>
               <div class="form-actions">
-                <button class="primary-button" type="submit">Gerar link exclusivo</button>
+                <button class="primary-button" type="submit">Criar usuario</button>
               </div>
             </form>
             <div id="inviteResult" class="notice" hidden></div>

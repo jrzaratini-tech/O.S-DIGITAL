@@ -14,9 +14,9 @@ Nao ha etapa de build. O Render serve diretamente os arquivos `index.html`, `sty
 
 - Greice: perfil Comercial, acesso total.
 - Zaratini: perfil Projetista, acesso total.
-- Montagem: cadastro por link exclusivo gerado na aba Equipe.
+- Montagem: link padrao da equipe e login com e-mail/senha criados na aba Equipe.
 
-O montador recebe um link nominal, confere o nome, cria e-mail/senha e fica vinculado a esse convite. Depois disso, o mesmo link exige o login do colaborador correto e mostra apenas as O.S atribuidas a ele.
+Greice/Zaratini criam o usuario da montagem na aba Equipe, usando nome, e-mail e senha. O colaborador recebe o link padrao da equipe e seus dados de acesso. Ao logar, ve apenas as O.S atribuidas ao proprio UID.
 
 ## Firebase
 
@@ -34,7 +34,7 @@ Firestore Database > Regras > Publicar
 - Comercial/Projetista criam e editam O.S.
 - Cada O.S recebe processos separados para Projetista e Montagem.
 - Comercial/Projetista selecionam o responsavel pela montagem.
-- O app cria uma copia de painel em `convites/{token}/servicos/{osId}` e tambem permite leitura das O.S pelo token/UID do montador.
+- O app atribui a O.S ao UID real do colaborador e mantem uma copia auxiliar em `convites/{uid}/servicos/{osId}`.
 - A montagem marca apenas as etapas liberadas para ela.
 
 ## Anexos

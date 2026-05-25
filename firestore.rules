@@ -30,25 +30,6 @@ service cloud.firestore {
         ];
     }
 
-    function validMountingInvite(inviteId) {
-      return exists(/databases/$(database)/documents/convites/$(inviteId))
-        && get(/databases/$(database)/documents/convites/$(inviteId)).data.perfil == 'montagem'
-        && get(/databases/$(database)/documents/convites/$(inviteId)).data.ativo != false;
-    }
-
-    function unclaimedInvite(inviteId) {
-      return !get(/databases/$(database)/documents/convites/$(inviteId)).data.keys().hasAny(['claimedUid'])
-        || get(/databases/$(database)/documents/convites/$(inviteId)).data.claimedUid == '';
-    }
-
-    function claimableByCurrentUser(inviteId) {
-      return validMountingInvite(inviteId)
-        && (
-          unclaimedInvite(inviteId)
-          || get(/databases/$(database)/documents/convites/$(inviteId)).data.claimedUid == request.auth.uid
-        );
-    }
-
     function ownsInvite(inviteId) {
       return mountingAccess() && userDoc().inviteId == inviteId;
     }
@@ -71,16 +52,17 @@ service cloud.firestore {
       allow read: if signedIn() && (request.auth.uid == uid || fullAccess());
 
       allow create: if signedIn()
-        && request.auth.uid == uid
         && (
-          fixedAdminEmail()
+          fullAccess()
           || (
-            request.resource.data.perfil == 'montagem'
+            request.auth.uid == uid
+            && fixedAdminEmail()
+          )
+          || (
+            request.auth.uid == uid
+            && request.resource.data.perfil == 'montagem'
             && request.resource.data.ativo == true
-            && request.resource.data.keys().hasAll(['inviteId', 'nome', 'email'])
-            && claimableByCurrentUser(request.resource.data.inviteId)
-            && request.resource.data.nome == get(/databases/$(database)/documents/convites/$(request.resource.data.inviteId)).data.nome
-            && request.resource.data.email is string
+            && request.resource.data.inviteId == request.auth.uid
           )
         );
 
@@ -88,29 +70,11 @@ service cloud.firestore {
     }
 
     match /convites/{inviteId} {
-      allow get: if true;
-      allow list, create, delete: if fullAccess();
-
-      allow update: if fullAccess()
-        || (
-          signedIn()
-          && resource.data.perfil == 'montagem'
-          && resource.data.ativo != false
-          && (
-            !resource.data.keys().hasAny(['claimedUid'])
-            || resource.data.claimedUid == ''
-            || resource.data.claimedUid == request.auth.uid
-          )
-          && request.resource.data.diff(resource.data).changedKeys()
-            .hasOnly(['claimedUid', 'claimedEmail', 'claimedAt', 'used'])
-          && request.resource.data.claimedUid == request.auth.uid
-          && request.resource.data.claimedEmail is string
-          && request.resource.data.used == true
-        );
+      allow get: if fullAccess() || ownsInvite(inviteId);
+      allow list, create, update, delete: if fullAccess();
 
       match /servicos/{serviceId} {
         allow read: if fullAccess() || ownsInvite(inviteId);
-
         allow create, delete: if fullAccess();
 
         allow update: if fullAccess()
@@ -123,9 +87,7 @@ service cloud.firestore {
     }
 
     match /servicos/{serviceId} {
-      allow read: if fullAccess()
-        || assignedToMountingUser();
-
+      allow read: if fullAccess() || assignedToMountingUser();
       allow create, delete: if fullAccess();
 
       allow update: if fullAccess()

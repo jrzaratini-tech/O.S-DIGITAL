@@ -1,6 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
-  createUserWithEmailAndPassword,
   getAuth,
   onAuthStateChanged,
   sendPasswordResetEmail,
@@ -24,10 +23,9 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { adminUsers, firebaseConfig } from "./firebase.config.js";
 
-const APP_VERSION = "14";
-const inviteToken = new URLSearchParams(window.location.search).get("convite");
-const panelToken = new URLSearchParams(window.location.search).get("painel") || inviteToken;
-const panelMode = Boolean(panelToken);
+const APP_VERSION = "15";
+const urlParams = new URLSearchParams(window.location.search);
+const teamLoginMode = urlParams.get("equipe") === "1" || urlParams.get("montagem") === "1";
 const servicesCollection = "servicos";
 const usersCollection = "usuarios";
 const invitesCollection = "convites";
@@ -206,6 +204,8 @@ const dom = {
   exportButton: document.querySelector("#exportButton"),
   inviteForm: document.querySelector("#inviteForm"),
   inviteName: document.querySelector("#inviteName"),
+  inviteEmail: document.querySelector("#inviteEmail"),
+  invitePassword: document.querySelector("#invitePassword"),
   inviteResult: document.querySelector("#inviteResult"),
   teamList: document.querySelector("#teamList"),
   dialog: document.querySelector("#serviceDialog"),
@@ -437,115 +437,6 @@ async function ensureUserProfile(user) {
   throw new Error("Usuario sem perfil. Greice e Zaratini devem estar em firebase.config.js.");
 }
 
-async function loadPanelInvite() {
-  if (!panelMode) return null;
-  const inviteRef = doc(db, invitesCollection, panelToken);
-  const snapshot = await getDoc(inviteRef);
-  if (!snapshot.exists()) throw new Error("Link invalido ou removido.");
-  const invite = { id: snapshot.id, ...snapshot.data() };
-  if (invite.perfil !== "montagem") throw new Error("Este convite nao e de montagem.");
-  if (invite.ativo === false) throw new Error("Este acesso foi desativado.");
-  state.invite = invite;
-  return invite;
-}
-
-function renderPanelAuthState(invite) {
-  dom.authView.hidden = false;
-  dom.appView.hidden = true;
-  dom.logoutButton.hidden = true;
-  dom.authForm.hidden = false;
-  dom.nameField.hidden = false;
-  dom.authName.value = invite.nome || "";
-  dom.authName.readOnly = true;
-  dom.authName.required = false;
-  dom.authEmail.closest("label").hidden = false;
-  dom.authEmail.required = true;
-  dom.authPassword.required = true;
-  dom.forgotPasswordButton.hidden = !invite.claimedUid;
-  dom.authTitle.textContent = invite.claimedUid ? "Entrar no painel da montagem" : "Cadastrar acesso da montagem";
-  dom.authText.textContent = invite.claimedUid
-    ? "Use o e-mail e senha cadastrados para este colaborador."
-    : "Confira o nome, informe e-mail e senha. Este cadastro ficara vinculado a este link.";
-  dom.authSubmit.textContent = invite.claimedUid ? "Entrar no painel" : "Cadastrar e entrar";
-}
-
-async function createMountingProfile(user, invite) {
-  const profile = {
-    nome: invite.nome,
-    email: user.email,
-    perfil: "montagem",
-    ativo: true,
-    inviteId: invite.id,
-    createdAt: serverTimestamp(),
-  };
-  const userRef = doc(db, usersCollection, user.uid);
-  const existingProfile = await getDoc(userRef);
-  if (!existingProfile.exists()) {
-    await setDoc(userRef, profile);
-  }
-  await updateDoc(doc(db, invitesCollection, invite.id), {
-    claimedUid: user.uid,
-    claimedEmail: user.email,
-    claimedAt: serverTimestamp(),
-    used: true,
-  });
-  return { uid: user.uid, ...profile };
-}
-
-async function enterPanel(user, invite) {
-  state.authUser = user;
-  state.profile = {
-    uid: user.uid,
-    nome: invite.nome,
-    email: user.email,
-    perfil: "montagem",
-    ativo: true,
-    painelToken: invite.id,
-    inviteId: invite.id,
-  };
-  showPanel(invite);
-  subscribeServices();
-}
-
-async function handlePanelAuthSubmit(email, password) {
-  const invite = state.invite || (await loadPanelInvite());
-  if (invite.claimedUid) {
-    const credential = await signInWithEmailAndPassword(auth, email, password);
-    if (credential.user.uid !== invite.claimedUid) {
-      await signOut(auth);
-      throw new Error("Este e-mail nao pertence ao colaborador deste link.");
-    }
-    await enterPanel(credential.user, invite);
-    return;
-  }
-
-  const credential = await createUserWithEmailAndPassword(auth, email, password);
-  const profile = await createMountingProfile(credential.user, invite);
-  const claimedInvite = {
-    ...invite,
-    claimedUid: credential.user.uid,
-    claimedEmail: credential.user.email,
-    used: true,
-  };
-  state.invite = claimedInvite;
-  state.profile = profile;
-  await enterPanel(credential.user, claimedInvite);
-}
-
-async function finishExistingPanelRegistration(email, password, invite) {
-  const credential = await signInWithEmailAndPassword(auth, email, password);
-  const profile = await createMountingProfile(credential.user, invite);
-  const claimedInvite = {
-    ...invite,
-    claimedUid: credential.user.uid,
-    claimedEmail: credential.user.email,
-    used: true,
-  };
-  state.invite = claimedInvite;
-  state.profile = profile;
-  await enterPanel(credential.user, claimedInvite);
-}
-
 async function handleAuthSubmit(event) {
   event.preventDefault();
   clearAuthMessage();
@@ -554,19 +445,7 @@ async function handleAuthSubmit(event) {
   dom.authSubmit.disabled = true;
 
   try {
-    if (panelMode) {
-      try {
-        await handlePanelAuthSubmit(email, password);
-      } catch (error) {
-        if (error?.code === "auth/email-already-in-use" && state.invite && !state.invite.claimedUid) {
-          await finishExistingPanelRegistration(email, password, state.invite);
-        } else {
-          throw error;
-        }
-      }
-    } else {
-      await signInWithEmailAndPassword(auth, email, password);
-    }
+    await signInWithEmailAndPassword(auth, email, password);
   } catch (error) {
     showAuthMessage(readableAuthError(error), true);
   } finally {
@@ -600,8 +479,10 @@ async function handlePasswordReset() {
 
 function renderAuthState() {
   dom.authForm.hidden = false;
-  dom.authTitle.textContent = "Entrar no sistema";
-  dom.authText.textContent = "Greice e Zaratini entram com e-mail e senha cadastrados no Firebase.";
+  dom.authTitle.textContent = teamLoginMode ? "Acesso da montagem" : "Entrar no sistema";
+  dom.authText.textContent = teamLoginMode
+    ? "Entre com o e-mail e senha enviados pela Print Pixel."
+    : "Greice e Zaratini entram com e-mail e senha cadastrados no Firebase.";
   dom.authSubmit.textContent = "Entrar";
   dom.nameField.hidden = true;
   dom.authName.readOnly = false;
@@ -617,24 +498,16 @@ function showApp() {
   dom.appView.hidden = false;
   dom.logoutButton.hidden = false;
   dom.userName.textContent = `${state.profile.nome} - ${roles[state.profile.perfil].label}`;
-}
-
-function showPanel(invite) {
-  dom.authView.hidden = true;
-  dom.appView.hidden = false;
-  dom.logoutButton.hidden = false;
-  state.profile = {
-    uid: state.authUser?.uid || invite.claimedUid || panelToken,
-    nome: invite.nome,
-    perfil: "montagem",
-    ativo: true,
-    painelToken: panelToken,
-  };
-  dom.userName.textContent = `${invite.nome} - Montagem`;
-  dom.tabs.forEach((tab) => {
-    tab.hidden = !["fila"].includes(tab.dataset.view);
-  });
-  setView("fila");
+  if (state.profile.perfil === "montagem") {
+    dom.tabs.forEach((tab) => {
+      tab.hidden = !["fila"].includes(tab.dataset.view);
+    });
+    setView("fila");
+  } else {
+    dom.tabs.forEach((tab) => {
+      tab.hidden = false;
+    });
+  }
 }
 
 function showLogin() {
@@ -718,24 +591,6 @@ function subscribeServices() {
     state.unsubscribeServices();
     state.unsubscribeServices = null;
   }
-  if (panelMode) {
-    const panelServices = query(collection(db, invitesCollection, panelToken, servicesCollection));
-    const byInviteToken = query(collection(db, servicesCollection), where("assignedMountingToken", "==", panelToken));
-    const byUserUid = state.authUser?.uid
-      ? query(collection(db, servicesCollection), where("assignedMountingUid", "==", state.authUser.uid))
-      : null;
-    const buckets = new Map();
-    const sync = (snapshot) => {
-      snapshot.docs.forEach((item) => buckets.set(item.id, { id: item.id, ...item.data() }));
-      state.services = Array.from(buckets.values());
-      render();
-    };
-    state.unsubscribeServices = [
-      onSnapshot(panelServices, sync, (error) => showAuthMessage(`Erro ao ler painel: ${error.message}`, true)),
-      onSnapshot(byInviteToken, sync, (error) => showAuthMessage(`Erro ao ler OS: ${error.message}`, true)),
-    ].concat(byUserUid ? [onSnapshot(byUserUid, sync, (error) => showAuthMessage(`Erro ao ler OS: ${error.message}`, true))] : []);
-    return;
-  }
   const q =
     state.profile?.perfil === "montagem"
       ? query(collection(db, servicesCollection), where("assignedMountingUid", "==", state.authUser.uid))
@@ -816,11 +671,14 @@ function renderTeam() {
     dom.teamList.innerHTML = "";
     return;
   }
+  const standardLink = buildTeamLoginLink();
+  dom.inviteResult.hidden = false;
+  dom.inviteResult.innerHTML = `<strong>Link padrao da equipe</strong><br><input readonly value="${standardLink}" onclick="this.select()">`;
   const items = state.team
     .map(
       (member) => {
-        const status = member.ativo === false ? "Inativo" : member.claimedUid ? "Cadastrado" : "Convite pendente";
-        const accessInfo = member.claimedEmail || buildInviteLink(member.token);
+        const status = member.ativo === false ? "Inativo" : "Cadastrado";
+        const accessInfo = member.email || member.claimedEmail || "Sem e-mail";
         return `
           <div class="audit-item team-item">
             <span>
@@ -837,7 +695,7 @@ function renderTeam() {
   dom.teamList.innerHTML =
     items
       ? items
-      : '<div class="empty-state"><strong>Nenhum montador cadastrado.</strong><span>Gere um link exclusivo para o primeiro colaborador.</span></div>';
+      : '<div class="empty-state"><strong>Nenhum montador cadastrado.</strong><span>Crie o primeiro usuario e envie o link padrao da equipe.</span></div>';
 }
 
 function assignedCountFor(token) {
@@ -916,10 +774,10 @@ function renderServiceList() {
   });
 }
 
-function buildInviteLink(token) {
+function buildTeamLoginLink() {
   const url = new URL(window.location.href);
   url.search = "";
-  url.searchParams.set("painel", token);
+  url.searchParams.set("equipe", "1");
   url.searchParams.set("v", APP_VERSION);
   return url.toString();
 }
@@ -928,29 +786,96 @@ function selectedMountingMember(token) {
   return state.team.find((member) => member.token === token);
 }
 
-async function createInvite(event) {
+function generatePassword() {
+  const code = crypto.getRandomValues(new Uint32Array(1))[0] % 9000 + 1000;
+  return `Print@${code}`;
+}
+
+async function createAuthUser(email, password) {
+  const response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${firebaseConfig.apiKey}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, returnSecureToken: false }),
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    const message = payload?.error?.message || "Nao foi possivel criar o usuario no Firebase Auth.";
+    if (message === "EMAIL_EXISTS") return signInAuthUser(email, password);
+    if (message.includes("WEAK_PASSWORD")) throw new Error("A senha precisa ter pelo menos 6 caracteres.");
+    throw new Error(message);
+  }
+  return payload.localId;
+}
+
+async function signInAuthUser(email, password) {
+  const response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${firebaseConfig.apiKey}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, returnSecureToken: false }),
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    const message = payload?.error?.message || "Este e-mail ja existe. Informe a senha correta ou use outro e-mail.";
+    if (message === "INVALID_LOGIN_CREDENTIALS" || message === "INVALID_PASSWORD") {
+      throw new Error("Este e-mail ja existe no Firebase, mas a senha informada nao confere.");
+    }
+    throw new Error(message);
+  }
+  return payload.localId;
+}
+
+async function createTeamUser(event) {
   event.preventDefault();
   if (!currentRole().canEditService) return;
   const name = dom.inviteName.value.trim();
-  if (!name) return;
-  const token = crypto.randomUUID();
-  await setDoc(doc(db, invitesCollection, token), {
-    nome: name,
-    perfil: "montagem",
-    ativo: true,
-    createdByUid: state.authUser.uid,
-    createdByName: state.profile.nome,
-    createdAt: serverTimestamp(),
-  });
-  const link = buildInviteLink(token);
-  dom.inviteResult.hidden = false;
-  dom.inviteResult.innerHTML = `<strong>Link exclusivo de ${name}</strong><br><input readonly value="${link}" onclick="this.select()">`;
+  const email = dom.inviteEmail.value.trim().toLowerCase();
+  const password = dom.invitePassword.value.trim() || generatePassword();
+  if (!name || !email || !password) return;
+  const button = dom.inviteForm.querySelector("button[type='submit']");
+  button.disabled = true;
+  button.textContent = "Criando...";
   try {
-    await navigator.clipboard.writeText(link);
-  } catch {
-    // Clipboard can be blocked by the browser; the link remains selectable.
+    const uid = await createAuthUser(email, password);
+    const profile = {
+      nome: name,
+      email,
+      perfil: "montagem",
+      ativo: true,
+      inviteId: uid,
+      createdAt: serverTimestamp(),
+      createdByUid: state.authUser.uid,
+      createdByName: state.profile.nome,
+    };
+    await setDoc(doc(db, usersCollection, uid), profile);
+    await setDoc(doc(db, invitesCollection, uid), {
+      ...profile,
+      claimedUid: uid,
+      claimedEmail: email,
+      used: true,
+    });
+    const link = buildTeamLoginLink();
+    dom.inviteResult.hidden = false;
+    dom.inviteResult.innerHTML = `
+      <strong>Usuario criado: ${name}</strong><br>
+      <span>Link padrao: ${link}</span><br>
+      <span>E-mail: ${email}</span><br>
+      <span>Senha: ${password}</span>
+    `;
+    try {
+      await navigator.clipboard.writeText(`Link: ${link}\nE-mail: ${email}\nSenha: ${password}`);
+    } catch {
+      // Clipboard can be blocked by the browser; the credentials remain visible.
+    }
+    dom.inviteName.value = "";
+    dom.inviteEmail.value = "";
+    dom.invitePassword.value = "";
+  } catch (error) {
+    dom.inviteResult.hidden = false;
+    dom.inviteResult.textContent = `Nao foi possivel criar o usuario: ${error.message}`;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Criar usuario";
   }
-  dom.inviteName.value = "";
 }
 
 async function removeMember(uid) {
@@ -1029,7 +954,7 @@ function serviceFromForm(existing) {
       ...Array.from(dom.attachments.files || []).map((file) => ({ name: file.name, source: "file", dataUrl: null })),
       ...state.pastedAttachments,
     ],
-    assignedMountingUid: mountingMember?.claimedUid || mountingToken,
+    assignedMountingUid: mountingMember?.uid || mountingMember?.claimedUid || mountingToken,
     assignedMountingToken: mountingToken,
     assignedMountingName: mountingMember?.nome || "",
     createdBy: existing?.createdBy || state.profile.nome,
@@ -1146,13 +1071,7 @@ async function toggleStep(serviceId, group, stepId, checked) {
     [group]: nextSteps,
     updatedAt: serverTimestamp(),
   };
-  if (nextStatus === "Concluido" && !panelMode && state.profile.perfil !== "montagem") update.superPriority = false;
-  if (panelMode) {
-    state.services = state.services.map((item) => (item.id === serviceId ? nextService : item));
-    await updateDoc(panelServiceRef(panelToken, serviceId), { [group]: nextSteps, updatedAt: timestamp() });
-    runInBackground(() => updateDoc(doc(db, servicesCollection, serviceId), update), "Atualizacao da OS principal pela montagem");
-    return;
-  }
+  if (nextStatus === "Concluido" && state.profile.perfil !== "montagem") update.superPriority = false;
   await updateDoc(doc(db, servicesCollection, serviceId), update);
   runInBackground(() => writePanelMirror(serviceId, nextService), "Atualizacao do painel de montagem");
 }
@@ -1324,9 +1243,7 @@ function bindEvents() {
   dom.authForm.addEventListener("submit", handleAuthSubmit);
   dom.forgotPasswordButton.addEventListener("click", handlePasswordReset);
   dom.logoutButton.addEventListener("click", () => {
-    signOut(auth).finally(() => {
-      if (panelMode) window.location.reload();
-    });
+    signOut(auth);
   });
 
   dom.tabs.forEach((tab) => {
@@ -1367,7 +1284,7 @@ function bindEvents() {
   dom.form.addEventListener("paste", handlePaste);
   dom.pasteZone.addEventListener("paste", handlePaste);
   dom.pasteZone.addEventListener("click", () => dom.pasteZone.focus());
-  dom.inviteForm.addEventListener("submit", createInvite);
+  dom.inviteForm.addEventListener("submit", createTeamUser);
   dom.deleteButton.addEventListener("click", deleteCurrentService);
   dom.resetFormButton.addEventListener("click", resetForm);
   dom.monthPicker.addEventListener("change", renderCalendar);
@@ -1409,25 +1326,6 @@ function initFirebase() {
   const app = initializeApp(firebaseConfig);
   db = getFirestore(app);
   auth = getAuth(app);
-
-  if (panelMode) {
-    dom.authTitle.textContent = "Carregando convite";
-    dom.authText.textContent = "Validando o link exclusivo da montagem.";
-    dom.authForm.hidden = true;
-    loadPanelInvite()
-      .then((invite) => {
-        renderPanelAuthState(invite);
-        onAuthStateChanged(auth, async (user) => {
-          if (!user || !invite.claimedUid || user.uid !== invite.claimedUid) return;
-          await enterPanel(user, invite);
-        });
-      })
-      .catch((error) => {
-        showAuthMessage(error.message, true);
-        dom.authSubmit.disabled = true;
-      });
-    return;
-  }
 
   onAuthStateChanged(auth, async (user) => {
     clearAuthMessage();
