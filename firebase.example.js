@@ -12,12 +12,12 @@ export const firebaseConfig = {
 export const adminUsers = [
   {
     nome: "Greice",
-    email: "EMAIL_DA_GREICE_AQUI",
+    email: "greicesantana@icloud.com",
     perfil: "comercial",
   },
   {
     nome: "Zaratini",
-    email: "EMAIL_DO_ZARATINI_AQUI",
+    email: "jrzaratini@icloud.com",
     perfil: "projetista",
   },
 ];

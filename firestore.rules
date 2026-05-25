@@ -25,8 +25,8 @@ service cloud.firestore {
     function fixedAdminEmail() {
       return signedIn()
         && request.auth.token.email in [
-          'EMAIL_DA_GREICE_AQUI',
-          'EMAIL_DO_ZARATINI_AQUI'
+          'greicesantana@icloud.com',
+          'jrzaratini@icloud.com'
         ];
     }
 

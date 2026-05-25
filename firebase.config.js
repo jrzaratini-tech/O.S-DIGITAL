@@ -1,21 +1,21 @@
 export const firebaseConfig = {
-  apiKey: "SUA_API_KEY",
-  authDomain: "SEU_PROJETO.firebaseapp.com",
-  projectId: "SEU_PROJETO",
-  storageBucket: "SEU_PROJETO.appspot.com",
-  messagingSenderId: "000000000000",
-  appId: "1:000000000000:web:0000000000000000000000",
+  apiKey: "AIzaSyASYhm59F5T2vNI4upS5jZjuAGPzxICwYA",
+  authDomain: "os-digital-bd929.firebaseapp.com",
+  projectId: "os-digital-bd929",
+  storageBucket: "os-digital-bd929.firebasestorage.app",
+  messagingSenderId: "282533516695",
+  appId: "1:282533516695:web:252f23d8584078c41ae0d2",
 };
 
 export const adminUsers = [
   {
     nome: "Greice",
-    email: "EMAIL_DA_GREICE_AQUI",
+    email: "greicesantana@icloud.com",
     perfil: "comercial",
   },
   {
     nome: "Zaratini",
-    email: "EMAIL_DO_ZARATINI_AQUI",
+    email: "jrzaratini@icloud.com",
     perfil: "projetista",
   },
 ];
