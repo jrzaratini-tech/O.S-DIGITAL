@@ -38,6 +38,10 @@ service cloud.firestore {
         || (
           resource.data.keys().hasAll(['assignedMountingUid'])
           && resource.data.assignedMountingUid != ''
+        )
+        || (
+          resource.data.keys().hasAll(['assignedMountingName'])
+          && resource.data.assignedMountingName != ''
         );
     }
 
@@ -77,6 +81,7 @@ service cloud.firestore {
           && (
             request.resource.data.assignedMountingToken == resource.data.assignedMountingToken
             || request.resource.data.assignedMountingUid == resource.data.assignedMountingUid
+            || request.resource.data.assignedMountingName == resource.data.assignedMountingName
           )
           && request.resource.data.diff(resource.data).changedKeys()
             .hasOnly(['mounting', 'updatedAt'])

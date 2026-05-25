@@ -23,6 +23,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { adminUsers, firebaseConfig } from "./firebase.config.js";
 
+const APP_VERSION = "8";
 const inviteToken = new URLSearchParams(window.location.search).get("convite");
 const panelToken = new URLSearchParams(window.location.search).get("painel") || inviteToken;
 const panelMode = Boolean(panelToken);
@@ -577,14 +578,20 @@ function showLogin() {
 }
 
 function subscribeServices() {
-  if (state.unsubscribeServices) state.unsubscribeServices();
   if (Array.isArray(state.unsubscribeServices)) {
     state.unsubscribeServices.forEach((unsubscribe) => unsubscribe());
+    state.unsubscribeServices = null;
+  } else if (state.unsubscribeServices) {
+    state.unsubscribeServices();
     state.unsubscribeServices = null;
   }
   if (panelMode) {
     const byToken = query(collection(db, servicesCollection), where("assignedMountingToken", "==", panelToken));
     const byLegacyUid = query(collection(db, servicesCollection), where("assignedMountingUid", "==", panelToken));
+    const inviteName = (state.invite?.nome || "").trim();
+    const byInviteName = inviteName
+      ? query(collection(db, servicesCollection), where("assignedMountingName", "==", inviteName))
+      : null;
     const buckets = new Map();
     const sync = (snapshot) => {
       snapshot.docs.forEach((item) => buckets.set(item.id, { id: item.id, ...item.data() }));
@@ -594,7 +601,7 @@ function subscribeServices() {
     state.unsubscribeServices = [
       onSnapshot(byToken, sync, (error) => showAuthMessage(`Erro ao ler OS: ${error.message}`, true)),
       onSnapshot(byLegacyUid, sync, (error) => showAuthMessage(`Erro ao ler OS: ${error.message}`, true)),
-    ];
+    ].concat(byInviteName ? [onSnapshot(byInviteName, sync, (error) => showAuthMessage(`Erro ao ler OS: ${error.message}`, true))] : []);
     return;
   }
   const q =
@@ -775,6 +782,7 @@ function buildInviteLink(token) {
   const url = new URL(window.location.href);
   url.search = "";
   url.searchParams.set("painel", token);
+  url.searchParams.set("v", APP_VERSION);
   return url.toString();
 }
 
@@ -1263,7 +1271,16 @@ function init() {
   renderAttachmentPreview();
   initFirebase();
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js").catch(() => {});
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    });
+    navigator.serviceWorker
+      .register(`sw.js?v=${APP_VERSION}`)
+      .then((registration) => registration.update())
+      .catch(() => {});
   }
 }
 
