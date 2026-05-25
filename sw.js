@@ -1,4 +1,4 @@
-const CACHE_NAME = "os-digital-v10";
+const CACHE_NAME = "os-digital-v12";
 const APP_SHELL = [
   "./",
   "./index.html",

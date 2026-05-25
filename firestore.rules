@@ -30,19 +30,33 @@ service cloud.firestore {
         ];
     }
 
-    function hasPanelToken() {
-      return (
-          resource.data.keys().hasAll(['assignedMountingToken'])
-          && resource.data.assignedMountingToken != ''
-        )
-        || (
-          resource.data.keys().hasAll(['assignedMountingUid'])
-          && resource.data.assignedMountingUid != ''
-        )
-        || (
-          resource.data.keys().hasAll(['assignedMountingName'])
-          && resource.data.assignedMountingName != ''
+    function validMountingInvite(inviteId) {
+      return exists(/databases/$(database)/documents/convites/$(inviteId))
+        && get(/databases/$(database)/documents/convites/$(inviteId)).data.perfil == 'montagem'
+        && get(/databases/$(database)/documents/convites/$(inviteId)).data.ativo != false;
+    }
+
+    function unclaimedInvite(inviteId) {
+      return !get(/databases/$(database)/documents/convites/$(inviteId)).data.keys().hasAny(['claimedUid'])
+        || get(/databases/$(database)/documents/convites/$(inviteId)).data.claimedUid == '';
+    }
+
+    function ownsInvite(inviteId) {
+      return mountingAccess() && userDoc().inviteId == inviteId;
+    }
+
+    function assignedToMountingUser() {
+      return mountingAccess()
+        && (
+          resource.data.assignedMountingUid == request.auth.uid
+          || resource.data.assignedMountingToken == userDoc().inviteId
         );
+    }
+
+    function keepsMountingAssignment() {
+      return request.resource.data.assignedMountingUid == resource.data.assignedMountingUid
+        && request.resource.data.assignedMountingToken == resource.data.assignedMountingToken
+        && request.resource.data.assignedMountingName == resource.data.assignedMountingName;
     }
 
     match /usuarios/{uid} {
@@ -50,26 +64,47 @@ service cloud.firestore {
 
       allow create: if signedIn()
         && request.auth.uid == uid
-        && fixedAdminEmail();
+        && (
+          fixedAdminEmail()
+          || (
+            request.resource.data.perfil == 'montagem'
+            && request.resource.data.ativo == true
+            && request.resource.data.inviteId is string
+            && validMountingInvite(request.resource.data.inviteId)
+            && unclaimedInvite(request.resource.data.inviteId)
+            && request.resource.data.nome == get(/databases/$(database)/documents/convites/$(request.resource.data.inviteId)).data.nome
+            && request.resource.data.email == request.auth.token.email
+          )
+        );
 
       allow update, delete: if fullAccess();
     }
 
     match /convites/{inviteId} {
       allow get: if true;
-      allow list, create, update, delete: if fullAccess();
+      allow list, create, delete: if fullAccess();
+
+      allow update: if fullAccess()
+        || (
+          signedIn()
+          && resource.data.perfil == 'montagem'
+          && resource.data.ativo != false
+          && (!resource.data.keys().hasAny(['claimedUid']) || resource.data.claimedUid == '')
+          && request.resource.data.diff(resource.data).changedKeys()
+            .hasOnly(['claimedUid', 'claimedEmail', 'claimedAt', 'used'])
+          && request.resource.data.claimedUid == request.auth.uid
+          && request.resource.data.claimedEmail == request.auth.token.email
+          && request.resource.data.used == true
+        );
 
       match /servicos/{serviceId} {
-        allow read: if get(/databases/$(database)/documents/convites/$(inviteId)).data.perfil == 'montagem'
-          && get(/databases/$(database)/documents/convites/$(inviteId)).data.ativo != false;
+        allow read: if fullAccess() || ownsInvite(inviteId);
 
         allow create, delete: if fullAccess();
 
         allow update: if fullAccess()
           || (
-            !signedIn()
-            && get(/databases/$(database)/documents/convites/$(inviteId)).data.perfil == 'montagem'
-            && get(/databases/$(database)/documents/convites/$(inviteId)).data.ativo != false
+            ownsInvite(inviteId)
             && request.resource.data.diff(resource.data).changedKeys()
               .hasOnly(['mounting', 'updatedAt'])
           );
@@ -78,27 +113,14 @@ service cloud.firestore {
 
     match /servicos/{serviceId} {
       allow read: if fullAccess()
-        || (mountingAccess() && resource.data.assignedMountingUid == request.auth.uid)
-        || (!signedIn() && hasPanelToken());
+        || assignedToMountingUser();
 
       allow create, delete: if fullAccess();
 
       allow update: if fullAccess()
         || (
-          mountingAccess()
-          && resource.data.assignedMountingUid == request.auth.uid
-          && request.resource.data.assignedMountingUid == request.auth.uid
-          && request.resource.data.diff(resource.data).changedKeys()
-            .hasOnly(['mounting', 'updatedAt'])
-        )
-        || (
-          !signedIn()
-          && hasPanelToken()
-          && (
-            request.resource.data.assignedMountingToken == resource.data.assignedMountingToken
-            || request.resource.data.assignedMountingUid == resource.data.assignedMountingUid
-            || request.resource.data.assignedMountingName == resource.data.assignedMountingName
-          )
+          assignedToMountingUser()
+          && keepsMountingAssignment()
           && request.resource.data.diff(resource.data).changedKeys()
             .hasOnly(['mounting', 'updatedAt'])
         );
