@@ -30,13 +30,9 @@ service cloud.firestore {
         ];
     }
 
-    function validInvite(inviteId) {
-      return exists(/databases/$(database)/documents/convites/$(inviteId))
-        && get(/databases/$(database)/documents/convites/$(inviteId)).data.perfil == 'montagem'
-        && get(/databases/$(database)/documents/convites/$(inviteId)).data.used == false
-        && get(/databases/$(database)/documents/convites/$(inviteId)).data.nome == request.resource.data.nome
-        && get(/databases/$(database)/documents/convites/$(inviteId)).data.emailInterno == request.resource.data.email
-        && get(/databases/$(database)/documents/convites/$(inviteId)).data.emailInterno == request.auth.token.email;
+    function hasPanelToken() {
+      return resource.data.keys().hasAll(['assignedMountingToken'])
+        && resource.data.assignedMountingToken != '';
     }
 
     match /usuarios/{uid} {
@@ -44,37 +40,20 @@ service cloud.firestore {
 
       allow create: if signedIn()
         && request.auth.uid == uid
-        && (
-          (
-            request.resource.data.perfil == 'montagem'
-            && request.resource.data.ativo == true
-            && validInvite(request.resource.data.conviteId)
-          )
-          || fixedAdminEmail()
-        );
+        && fixedAdminEmail();
 
       allow update, delete: if fullAccess();
     }
 
     match /convites/{inviteId} {
       allow get: if true;
-      allow list, create, delete: if fullAccess();
-
-      allow update: if fullAccess()
-        || (
-          signedIn()
-          && resource.data.used == false
-          && request.resource.data.diff(resource.data).changedKeys()
-            .hasOnly(['used', 'usedByUid', 'usedByEmail', 'usedAt'])
-          && request.resource.data.used == true
-          && request.resource.data.usedByUid == request.auth.uid
-          && request.resource.data.usedByEmail == request.auth.token.email
-        );
+      allow list, create, update, delete: if fullAccess();
     }
 
     match /servicos/{serviceId} {
       allow read: if fullAccess()
-        || (mountingAccess() && resource.data.assignedMountingUid == request.auth.uid);
+        || (mountingAccess() && resource.data.assignedMountingUid == request.auth.uid)
+        || (!signedIn() && hasPanelToken());
 
       allow create, delete: if fullAccess();
 
@@ -83,6 +62,13 @@ service cloud.firestore {
           mountingAccess()
           && resource.data.assignedMountingUid == request.auth.uid
           && request.resource.data.assignedMountingUid == request.auth.uid
+          && request.resource.data.diff(resource.data).changedKeys()
+            .hasOnly(['mounting', 'updatedAt'])
+        )
+        || (
+          !signedIn()
+          && hasPanelToken()
+          && request.resource.data.assignedMountingToken == resource.data.assignedMountingToken
           && request.resource.data.diff(resource.data).changedKeys()
             .hasOnly(['mounting', 'updatedAt'])
         );
