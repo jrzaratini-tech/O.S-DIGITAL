@@ -30,6 +30,10 @@ service cloud.firestore {
         ];
     }
 
+    function adminAccess() {
+      return fullAccess() || fixedAdminEmail();
+    }
+
     function ownsInvite(inviteId) {
       return mountingAccess() && userDoc().inviteId == inviteId;
     }
@@ -49,11 +53,11 @@ service cloud.firestore {
     }
 
     match /usuarios/{uid} {
-      allow read: if signedIn() && (request.auth.uid == uid || fullAccess());
+      allow read: if signedIn() && (request.auth.uid == uid || adminAccess());
 
       allow create: if signedIn()
         && (
-          fullAccess()
+          adminAccess()
           || (
             request.auth.uid == uid
             && fixedAdminEmail()
@@ -66,18 +70,18 @@ service cloud.firestore {
           )
         );
 
-      allow update, delete: if fullAccess();
+      allow update, delete: if adminAccess();
     }
 
     match /convites/{inviteId} {
-      allow get: if fullAccess() || ownsInvite(inviteId);
-      allow list, create, update, delete: if fullAccess();
+      allow get: if adminAccess() || ownsInvite(inviteId);
+      allow list, create, update, delete: if adminAccess();
 
       match /servicos/{serviceId} {
-        allow read: if fullAccess() || ownsInvite(inviteId);
-        allow create, delete: if fullAccess();
+        allow read: if adminAccess() || ownsInvite(inviteId);
+        allow create, delete: if adminAccess();
 
-        allow update: if fullAccess()
+        allow update: if adminAccess()
           || (
             ownsInvite(inviteId)
             && request.resource.data.diff(resource.data).changedKeys()
@@ -87,10 +91,10 @@ service cloud.firestore {
     }
 
     match /servicos/{serviceId} {
-      allow read: if fullAccess() || assignedToMountingUser();
-      allow create, delete: if fullAccess();
+      allow read: if adminAccess() || assignedToMountingUser();
+      allow create, delete: if adminAccess();
 
-      allow update: if fullAccess()
+      allow update: if adminAccess()
         || (
           assignedToMountingUser()
           && keepsMountingAssignment()

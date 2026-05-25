@@ -23,7 +23,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { adminUsers, firebaseConfig } from "./firebase.config.js";
 
-const APP_VERSION = "15";
+const APP_VERSION = "16";
 const urlParams = new URLSearchParams(window.location.search);
 const teamLoginMode = urlParams.get("equipe") === "1" || urlParams.get("montagem") === "1";
 const servicesCollection = "servicos";
