@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#1f6f54">
+    <title>OS Digital</title>
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">SG-CV</p>
+          <h1>OS Digital</h1>
+        </div>
+        <label class="role-picker">
+          <span>Usuário</span>
+          <select id="roleSelect" aria-label="Selecionar usuário">
+            <option value="comercial">Greice - Comercial</option>
+            <option value="projetista">Zaratini - Projetista</option>
+            <option value="montagem">João - Montagem</option>
+          </select>
+        </label>
+      </header>
+
+      <nav class="tabs" aria-label="Navegação principal">
+        <button class="tab is-active" data-view="fila" type="button">Fila</button>
+        <button class="tab" data-view="nova" type="button">Nova OS</button>
+        <button class="tab" data-view="calendario" type="button">Calendário</button>
+        <button class="tab" data-view="metricas" type="button">Métricas</button>
+      </nav>
+
+      <main>
+        <section id="view-fila" class="view is-active" aria-labelledby="filaTitle">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Produção</p>
+              <h2 id="filaTitle">Fila operacional</h2>
+            </div>
+            <div class="filters" role="search">
+              <input id="searchInput" type="search" placeholder="Buscar cliente, OS ou observação">
+              <select id="statusFilter" aria-label="Filtrar status">
+                <option value="todos">Todos os status</option>
+                <option value="Aguardando projeto">Aguardando projeto</option>
+                <option value="Em projeto">Em projeto</option>
+                <option value="Em montagem">Em montagem</option>
+                <option value="Concluído">Concluído</option>
+              </select>
+            </div>
+          </div>
+          <div id="permissionBanner" class="notice" hidden></div>
+          <div id="queueSummary" class="summary-grid"></div>
+          <div id="serviceList" class="service-list"></div>
+        </section>
+
+        <section id="view-nova" class="view" aria-labelledby="formTitle">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Cadastro</p>
+              <h2 id="formTitle">Ordem de serviço</h2>
+            </div>
+            <button id="resetFormButton" class="ghost-button" type="button">Limpar</button>
+          </div>
+          <form id="serviceForm" class="form-grid">
+            <input id="editingId" type="hidden">
+            <label>
+              Cliente
+              <input id="clientName" required autocomplete="organization" placeholder="Nome do cliente">
+            </label>
+            <label>
+              Tipo de produto
+              <select id="productType" required>
+                <option value="Luz Frontal">Letreiro com Luz Frontal</option>
+                <option value="Logo Flutuante">Logo Flutuante</option>
+                <option value="Neon">Letreiro em Neon</option>
+              </select>
+            </label>
+            <label>
+              Entrega prometida
+              <input id="deliveryDate" required type="date">
+            </label>
+            <label>
+              Medidas do letreiro
+              <input id="dimensions" placeholder="Ex.: 300cm x 80cm">
+            </label>
+            <label class="wide">
+              Observações
+              <textarea id="notes" rows="4" placeholder="Fixação, material, acabamento, local de instalação..."></textarea>
+            </label>
+            <label class="wide">
+              Arquivos de referência
+              <input id="attachments" type="file" multiple>
+              <span class="field-help">Os nomes ficam registrados localmente. Para anexos reais em nuvem, ligue o Firebase Storage.</span>
+            </label>
+            <label class="switch-row">
+              <input id="superPriority" type="checkbox">
+              <span>Super Prioridade de Produção</span>
+            </label>
+            <div class="form-actions">
+              <button id="deleteButton" class="danger-button" type="button" hidden>Excluir OS</button>
+              <button class="primary-button" type="submit">Salvar OS</button>
+            </div>
+          </form>
+        </section>
+
+        <section id="view-calendario" class="view" aria-labelledby="calendarTitle">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Agenda</p>
+              <h2 id="calendarTitle">Entregas por data</h2>
+            </div>
+            <input id="monthPicker" type="month" aria-label="Selecionar mês">
+          </div>
+          <div id="calendarGrid" class="calendar-grid"></div>
+        </section>
+
+        <section id="view-metricas" class="view" aria-labelledby="metricsTitle">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Auditoria</p>
+              <h2 id="metricsTitle">Timestamps e desempenho</h2>
+            </div>
+            <button id="exportButton" class="ghost-button" type="button">Exportar JSON</button>
+          </div>
+          <div id="metricsGrid" class="summary-grid"></div>
+          <div id="auditList" class="audit-list"></div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="serviceDialog" class="service-dialog">
+      <div id="serviceDetail"></div>
+      <form method="dialog">
+        <button class="primary-button" value="close">Fechar</button>
+      </form>
+    </dialog>
+
+    <template id="emptyStateTemplate">
+      <div class="empty-state">
+        <strong>Nenhuma OS encontrada.</strong>
+        <span>Ajuste os filtros ou cadastre um novo serviço.</span>
+      </div>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
