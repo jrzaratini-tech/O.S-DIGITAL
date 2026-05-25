@@ -23,7 +23,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { adminUsers, firebaseConfig } from "./firebase.config.js";
 
-const APP_VERSION = "9";
+const APP_VERSION = "10";
 const inviteToken = new URLSearchParams(window.location.search).get("convite");
 const panelToken = new URLSearchParams(window.location.search).get("painel") || inviteToken;
 const panelMode = Boolean(panelToken);
@@ -138,35 +138,6 @@ const workflows = {
     project: ["Arte / projeto"],
     mounting: ["Acabamento", "Embalagem"],
   },
-  "Luz Frontal": {
-    project: ["Vetorizacao e Arte", "Modelagem 3D", "Impressao do Gabarito"],
-    mounting: [
-      "Corte dos Metais (Lata/Galvanizado)",
-      "Pintura do Fundo Interno da Letra",
-      "Insercao do LED e Soldagem dos Circuitos",
-      "Aplicacao de Vedacao",
-      "Corte a Laser do Acrilico da Face",
-      "Pintura e Acabamento Externo",
-    ],
-  },
-  "Logo Flutuante": {
-    project: ["Vetorizacao", "Envio do Arquivo para Router CNC"],
-    mounting: [
-      "Execucao do Corte na Router CNC",
-      "Acabamento/Lixamento das Bordas",
-      "Pintura Geral de Superficie",
-      "Fixacao dos Pinos/Espacadores",
-    ],
-  },
-  Neon: {
-    project: ["Vetorizacao do Tracado", "Usinagem da Canaleta na Router CNC"],
-    mounting: [
-      "Limpeza da Peca",
-      "Insercao do LED Neon Flexivel nas Canaletas",
-      "Soldagem dos Cabos de Alimentacao",
-      "Colocacao da Borracha de Acabamento Perimetral",
-    ],
-  },
 };
 
 const state = {
@@ -178,6 +149,8 @@ const state = {
   invites: [],
   invite: null,
   pastedAttachments: [],
+  formBusy: false,
+  panelMirrorSyncQueued: false,
   view: "fila",
   search: "",
   status: "todos",
@@ -222,6 +195,7 @@ const dom = {
   projectProcessOptions: document.querySelector("#projectProcessOptions"),
   mountingProcessOptions: document.querySelector("#mountingProcessOptions"),
   superPriority: document.querySelector("#superPriority"),
+  saveButton: document.querySelector("#saveButton"),
   deleteButton: document.querySelector("#deleteButton"),
   resetFormButton: document.querySelector("#resetFormButton"),
   monthPicker: document.querySelector("#monthPicker"),
@@ -590,6 +564,14 @@ function panelServiceData(service) {
   return data;
 }
 
+function runInBackground(task, label = "Operacao em segundo plano") {
+  window.setTimeout(() => {
+    task().catch((error) => {
+      console.error(label, error);
+    });
+  }, 0);
+}
+
 async function writePanelMirror(serviceId, service) {
   const token = mountingTokenOf(service);
   if (!token) return;
@@ -602,12 +584,15 @@ async function removePanelMirror(token, serviceId) {
 }
 
 async function syncPanelMirrors(services) {
-  if (!currentRole().canEditService) return;
-  await Promise.all(
-    services
-      .filter((service) => mountingTokenOf(service))
-      .map((service) => writePanelMirror(service.id, service))
-  );
+  if (!currentRole().canEditService || state.panelMirrorSyncQueued) return;
+  const assignedServices = services.filter((service) => mountingTokenOf(service));
+  if (!assignedServices.length) return;
+  state.panelMirrorSyncQueued = true;
+  runInBackground(async () => {
+    for (const service of assignedServices) {
+      await writePanelMirror(service.id, service);
+    }
+  }, "Sincronizacao do painel de montagem");
 }
 
 function subscribeServices() {
@@ -620,23 +605,11 @@ function subscribeServices() {
   }
   if (panelMode) {
     const panelServices = query(collection(db, invitesCollection, panelToken, servicesCollection));
-    const byToken = query(collection(db, servicesCollection), where("assignedMountingToken", "==", panelToken));
-    const byLegacyUid = query(collection(db, servicesCollection), where("assignedMountingUid", "==", panelToken));
-    const inviteName = (state.invite?.nome || "").trim();
-    const byInviteName = inviteName
-      ? query(collection(db, servicesCollection), where("assignedMountingName", "==", inviteName))
-      : null;
-    const buckets = new Map();
     const sync = (snapshot) => {
-      snapshot.docs.forEach((item) => buckets.set(item.id, { id: item.id, ...item.data() }));
-      state.services = Array.from(buckets.values());
+      state.services = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
       render();
     };
-    state.unsubscribeServices = [
-      onSnapshot(panelServices, sync, (error) => showAuthMessage(`Erro ao ler painel: ${error.message}`, true)),
-      onSnapshot(byToken, sync, (error) => showAuthMessage(`Erro ao ler OS: ${error.message}`, true)),
-      onSnapshot(byLegacyUid, sync, (error) => showAuthMessage(`Erro ao ler OS: ${error.message}`, true)),
-    ].concat(byInviteName ? [onSnapshot(byInviteName, sync, (error) => showAuthMessage(`Erro ao ler OS: ${error.message}`, true))] : []);
+    state.unsubscribeServices = onSnapshot(panelServices, sync, (error) => showAuthMessage(`Erro ao ler painel: ${error.message}`, true));
     return;
   }
   const q =
@@ -647,7 +620,7 @@ function subscribeServices() {
     q,
     (snapshot) => {
       state.services = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
-      syncPanelMirrors(state.services).catch(() => {});
+      syncPanelMirrors(state.services);
       render();
     },
     (error) => showAuthMessage(`Erro ao ler OS: ${error.message}`, true)
@@ -687,6 +660,17 @@ function renderPermissionBanner() {
       tab.disabled = !currentRole().canEditService;
     }
   });
+}
+
+function setFormBusy(isBusy, label = "Salvando...") {
+  state.formBusy = isBusy;
+  if (isBusy) {
+    dom.saveButton.dataset.defaultText = dom.saveButton.dataset.defaultText || dom.saveButton.textContent;
+    dom.saveButton.textContent = label;
+  } else {
+    dom.saveButton.textContent = dom.saveButton.dataset.defaultText || "Salvar OS";
+  }
+  setFieldLocking();
 }
 
 function renderMountingSelect() {
@@ -857,17 +841,15 @@ async function removeMember(uid) {
 
   const updates = state.services
     .filter((service) => service.assignedMountingToken === uid)
-    .map((service) =>
-      Promise.all([
-        updateDoc(doc(db, servicesCollection, service.id), {
-          assignedMountingUid: "",
-          assignedMountingToken: "",
-          assignedMountingName: "",
-          updatedAt: serverTimestamp(),
-        }),
-        removePanelMirror(uid, service.id),
-      ])
-    );
+    .map((service) => {
+      runInBackground(() => removePanelMirror(uid, service.id), "Remocao do painel de usuario excluido");
+      return updateDoc(doc(db, servicesCollection, service.id), {
+        assignedMountingUid: "",
+        assignedMountingToken: "",
+        assignedMountingName: "",
+        updatedAt: serverTimestamp(),
+      });
+    });
   await Promise.all(updates);
   await updateDoc(doc(db, invitesCollection, uid), {
     ativo: false,
@@ -881,11 +863,12 @@ function setFieldLocking() {
   const role = currentRole();
   const fields = [dom.clientName, dom.productType, dom.deliveryDate, dom.dimensions, dom.notes, dom.attachments];
   fields.forEach((field) => {
-    field.disabled = !role.canEditService;
+    field.disabled = state.formBusy || !role.canEditService;
   });
-  dom.assignedMountingUid.disabled = !role.canEditService;
-  dom.superPriority.disabled = !role.canSetPriority;
-  dom.form.querySelector(".primary-button").disabled = !role.canCreate && !role.canEditService;
+  dom.assignedMountingUid.disabled = state.formBusy || !role.canEditService;
+  dom.superPriority.disabled = state.formBusy || !role.canSetPriority;
+  dom.saveButton.disabled = state.formBusy || (!role.canCreate && !role.canEditService);
+  dom.deleteButton.disabled = state.formBusy || !role.canDelete;
 }
 
 function resetForm() {
@@ -957,37 +940,57 @@ function editService(id) {
 
 async function saveForm(event) {
   event.preventDefault();
+  if (state.formBusy) return;
   const role = currentRole();
   const existing = state.services.find((service) => service.id === dom.editingId.value);
   if (!existing && !role.canCreate) return alert("Seu perfil nao pode criar novas ordens de servico.");
   if (existing && !role.canEditService) return alert("Seu perfil nao pode editar campos desta OS.");
 
-  const service = serviceFromForm(existing);
-  if (existing) {
-    await updateDoc(doc(db, servicesCollection, existing.id), { ...service, updatedAt: serverTimestamp() });
-    const previousToken = mountingTokenOf(existing);
-    const nextToken = mountingTokenOf(service);
-    if (previousToken && previousToken !== nextToken) await removePanelMirror(previousToken, existing.id);
-    if (nextToken) await writePanelMirror(existing.id, service);
-  } else {
-    const created = await addDoc(collection(db, servicesCollection), { ...service, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
-    if (mountingTokenOf(service)) await writePanelMirror(created.id, service);
+  setFormBusy(true, "Salvando...");
+  try {
+    const service = serviceFromForm(existing);
+    if (existing) {
+      await updateDoc(doc(db, servicesCollection, existing.id), { ...service, updatedAt: serverTimestamp() });
+      const previousToken = mountingTokenOf(existing);
+      const nextToken = mountingTokenOf(service);
+      runInBackground(async () => {
+        if (previousToken && previousToken !== nextToken) await removePanelMirror(previousToken, existing.id);
+        if (nextToken) await writePanelMirror(existing.id, service);
+      }, "Atualizacao do painel de montagem");
+    } else {
+      const created = await addDoc(collection(db, servicesCollection), { ...service, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+      runInBackground(async () => {
+        if (mountingTokenOf(service)) await writePanelMirror(created.id, service);
+      }, "Criacao do painel de montagem");
+    }
+    resetForm();
+    setView("fila");
+  } catch (error) {
+    alert(`Nao foi possivel salvar a OS: ${error.message}`);
+  } finally {
+    setFormBusy(false);
   }
-  resetForm();
-  setView("fila");
 }
 
 async function deleteCurrentService() {
+  if (state.formBusy) return;
   if (!currentRole().canDelete) return;
   const id = dom.editingId.value;
   if (!id) return;
   const service = state.services.find((item) => item.id === id);
   const label = service?.osNumber || id;
   if (!confirm(`Excluir a ${label}?`)) return;
-  await deleteDoc(doc(db, servicesCollection, id));
-  await removePanelMirror(mountingTokenOf(service), id);
-  resetForm();
-  setView("fila");
+  setFormBusy(true, "Excluindo...");
+  try {
+    await deleteDoc(doc(db, servicesCollection, id));
+    runInBackground(() => removePanelMirror(mountingTokenOf(service), id), "Remocao do painel de montagem");
+    resetForm();
+    setView("fila");
+  } catch (error) {
+    alert(`Nao foi possivel excluir a OS: ${error.message}`);
+  } finally {
+    setFormBusy(false);
+  }
 }
 
 function canToggleStep(group) {
@@ -1020,11 +1023,14 @@ async function toggleStep(serviceId, group, stepId, checked) {
     updatedAt: serverTimestamp(),
   };
   if (nextStatus === "Concluido" && !panelMode && state.profile.perfil !== "montagem") update.superPriority = false;
-  await updateDoc(doc(db, servicesCollection, serviceId), update);
   if (panelMode) {
     state.services = state.services.map((item) => (item.id === serviceId ? nextService : item));
     await updateDoc(panelServiceRef(panelToken, serviceId), { [group]: nextSteps, updatedAt: timestamp() });
+    runInBackground(() => updateDoc(doc(db, servicesCollection, serviceId), update), "Atualizacao da OS principal pela montagem");
+    return;
   }
+  await updateDoc(doc(db, servicesCollection, serviceId), update);
+  runInBackground(() => writePanelMirror(serviceId, nextService), "Atualizacao do painel de montagem");
 }
 
 function renderChecklist(service, group, title) {

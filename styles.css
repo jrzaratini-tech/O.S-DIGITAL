@@ -403,6 +403,10 @@ textarea {
   transform: translateY(-1px);
 }
 
+button:disabled:hover {
+  transform: none;
+}
+
 .danger-button {
   background: var(--accent);
   color: white;

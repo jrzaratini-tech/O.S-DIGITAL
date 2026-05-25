@@ -1,35 +1,46 @@
-# OS Digital - SG-CV
+# O.S Digital Print Pixel
 
-App mobile-first para controle de ordens de serviço de comunicação visual, baseado no guia `Guia_de_Producao_App_Comunicacao_Visual.pdf`.
+App de ordens de servico para producao de comunicacao visual da Print Pixel.
 
-## Como abrir
+## Publicacao
 
-Abra `index.html` no navegador. O app funciona sem servidor usando `localStorage`.
+O app e publicado como site estatico no Render:
 
-## O que foi implementado
+https://o-s-digital.onrender.com
 
-- Perfis RBAC: Greice/Comercial, Zaratini/Projetista e Joao/Montagem.
-- Cadastro, edição e exclusão de OS conforme permissão.
-- Checklists dinâmicos para Luz Frontal, Logo Flutuante e Neon.
-- Fila com Super Prioridade acima da ordem por data de entrega.
-- Painel de montagem com botões grandes e bloqueio de campos sensíveis.
-- Calendário mensal de entregas.
-- Auditoria automática de conclusão com timestamp e operador.
-- Exportação JSON dos dados.
-- Estrutura PWA com manifesto e service worker.
-- Arquivo `firebase.example.js` com ponto de partida para Firestore.
-- Login com Firebase Auth.
-- Convite nominal e exclusivo para montadores.
-- Atribuicao de OS por montador: cada montador ve apenas os proprios trabalhos.
-- Selecao manual de processos por OS para Projetista e Montagem.
-- Campo de anexos com suporte a colar prints por Ctrl+V.
+Nao ha etapa de build. O Render serve diretamente os arquivos `index.html`, `styles.css`, `app.js`, `firebase.config.js`, `manifest.webmanifest`, `sw.js` e `icon.svg`.
+
+## Acessos
+
+- Greice: perfil Comercial, acesso total.
+- Zaratini: perfil Projetista, acesso total.
+- Montagem: acesso por link exclusivo gerado na aba Equipe.
+
+O montador nao cria conta e nao usa e-mail/senha. O link abre direto o painel do colaborador e mostra apenas as O.S atribuidas a ele.
+
+## Firebase
+
+Produtos usados:
+
+- Authentication com provedor E-mail/senha para Greice e Zaratini.
+- Firestore Database para usuarios, convites e ordens de servico.
+
+Sempre que `firestore.rules` mudar, publique manualmente em:
+
+Firestore Database > Regras > Publicar
+
+## Fluxo Principal
+
+- Comercial/Projetista criam e editam O.S.
+- Cada O.S recebe processos separados para Projetista e Montagem.
+- Comercial/Projetista selecionam o responsavel pela montagem.
+- O app cria uma copia de painel em `convites/{token}/servicos/{osId}` para o link do montador.
+- A montagem marca apenas as etapas liberadas para ela.
+
+## Anexos
+
+O campo de arquivos aceita selecao normal de arquivos e tambem prints colados com Ctrl+V. Prints sao compactados no navegador antes de serem salvos.
 
 ## CRM Print Pixel
 
-Foi localizada a pasta `C:\Users\Zaratini\OneDrive\Desktop\CRM-PRINTPIXEL`. O banco local `DATA\database\core.db` existe, mas as tabelas `events`, `pages` e `settings` estao vazias no momento da verificacao, portanto nao havia trabalhos locais para importar automaticamente.
-
-## Próximo passo para nuvem
-
-Preencha `firebase.config.js` com as credenciais do Firebase Web App. Depois cole o conteudo de `firestore.rules` em Firestore Database > Regras e publique.
-
-No Firebase Authentication, ative o metodo E-mail/senha. Crie manualmente os usuarios fixos Greice e Zaratini em Authentication > Usuarios. Os montadores devem entrar somente por link gerado na aba Equipe.
+Foi localizada a pasta `C:\Users\Zaratini\OneDrive\Desktop\CRM-PRINTPIXEL`. O banco local `DATA\database\core.db` existia, mas as tabelas `events`, `pages` e `settings` estavam vazias no momento da verificacao, portanto nao havia trabalhos locais para importar automaticamente.
