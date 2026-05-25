@@ -526,6 +526,22 @@ textarea {
   gap: 4px;
 }
 
+.team-item {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.team-item > span {
+  display: grid;
+  gap: 4px;
+}
+
+.danger-outline {
+  border-color: #fdba74;
+  color: #9a3412;
+}
+
 .audit-item span,
 .empty-state span {
   color: var(--muted);

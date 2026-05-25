@@ -34,7 +34,9 @@ service cloud.firestore {
       return exists(/databases/$(database)/documents/convites/$(inviteId))
         && get(/databases/$(database)/documents/convites/$(inviteId)).data.perfil == 'montagem'
         && get(/databases/$(database)/documents/convites/$(inviteId)).data.used == false
-        && get(/databases/$(database)/documents/convites/$(inviteId)).data.nome == request.resource.data.nome;
+        && get(/databases/$(database)/documents/convites/$(inviteId)).data.nome == request.resource.data.nome
+        && get(/databases/$(database)/documents/convites/$(inviteId)).data.emailInterno == request.resource.data.email
+        && get(/databases/$(database)/documents/convites/$(inviteId)).data.emailInterno == request.auth.token.email;
     }
 
     match /usuarios/{uid} {
@@ -66,6 +68,7 @@ service cloud.firestore {
             .hasOnly(['used', 'usedByUid', 'usedByEmail', 'usedAt'])
           && request.resource.data.used == true
           && request.resource.data.usedByUid == request.auth.uid
+          && request.resource.data.usedByEmail == request.auth.token.email
         );
     }
 

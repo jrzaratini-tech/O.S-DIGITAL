@@ -30,6 +30,7 @@ const inviteMode = Boolean(inviteToken);
 const servicesCollection = "servicos";
 const usersCollection = "usuarios";
 const invitesCollection = "convites";
+const internalMountingDomain = "montagem.os-digital.local";
 
 const roles = {
   comercial: {
@@ -247,6 +248,10 @@ function fixedUserForEmail(email) {
   return adminUsers.find((user) => user.email.toLowerCase() === normalized) || null;
 }
 
+function internalEmailForInvite(token) {
+  return `montador-${token.replace(/[^a-zA-Z0-9]/g, "").toLowerCase()}@${internalMountingDomain}`;
+}
+
 function hasValidFirebaseConfig() {
   return Boolean(firebaseConfig?.apiKey && !firebaseConfig.apiKey.includes("SUA_") && firebaseConfig.projectId);
 }
@@ -288,13 +293,16 @@ async function loadInvite() {
   state.invite = invite;
   dom.authName.value = invite.nome || "";
   dom.authName.disabled = true;
+  dom.authEmail.value = invite.emailInterno || internalEmailForInvite(inviteToken);
+  dom.authEmail.required = false;
+  dom.authEmail.closest("label").hidden = true;
   return invite;
 }
 
 async function handleAuthSubmit(event) {
   event.preventDefault();
   clearAuthMessage();
-  const email = dom.authEmail.value.trim();
+  const email = inviteMode ? internalEmailForInvite(inviteToken) : dom.authEmail.value.trim();
   const password = dom.authPassword.value;
   dom.authSubmit.disabled = true;
 
@@ -308,6 +316,7 @@ async function handleAuthSubmit(event) {
       await setDoc(doc(db, usersCollection, credential.user.uid), {
         nome: name,
         email,
+        loginInterno: true,
         perfil: "montagem",
         ativo: true,
         fixo: false,
@@ -359,16 +368,20 @@ async function handlePasswordReset() {
 function renderAuthState() {
   if (inviteMode) {
     dom.authTitle.textContent = "Cadastro de montador";
-    dom.authText.textContent = "Este link exclusivo foi gerado pelo Comercial ou Projetista.";
+    dom.authText.textContent = "Confira seu nome, defina uma senha e conclua o acesso.";
     dom.authSubmit.textContent = "Criar acesso";
     dom.nameField.hidden = false;
     dom.authName.required = true;
+    dom.forgotPasswordButton.hidden = true;
   } else {
     dom.authTitle.textContent = "Entrar no sistema";
     dom.authText.textContent = "Greice e Zaratini entram com e-mail e senha cadastrados no Firebase.";
     dom.authSubmit.textContent = "Entrar";
     dom.nameField.hidden = true;
     dom.authName.required = false;
+    dom.authEmail.closest("label").hidden = false;
+    dom.authEmail.required = true;
+    dom.forgotPasswordButton.hidden = false;
   }
 }
 
@@ -476,9 +489,12 @@ function renderTeam() {
   const active = state.team
     .map(
       (member) => `
-        <div class="audit-item">
-          <strong>${member.nome}</strong>
-          <span>${member.email || "E-mail ainda nao informado"} | ${member.ativo === false ? "Inativo" : "Ativo"}</span>
+        <div class="audit-item team-item">
+          <span>
+            <strong>${member.nome}</strong>
+            <span>${member.ativo === false ? "Inativo" : "Ativo"} | ${assignedCountFor(member.uid)} OS atribuida(s)</span>
+          </span>
+          <button class="small-button danger-outline" data-action="remove-member" data-id="${member.uid}" type="button">Excluir usuario</button>
         </div>
       `
     )
@@ -498,6 +514,10 @@ function renderTeam() {
     active || pending
       ? `${pending}${active}`
       : '<div class="empty-state"><strong>Nenhum montador cadastrado.</strong><span>Gere um link exclusivo para o primeiro colaborador.</span></div>';
+}
+
+function assignedCountFor(uid) {
+  return state.services.filter((service) => service.assignedMountingUid === uid).length;
 }
 
 function renderSummary() {
@@ -585,9 +605,11 @@ async function createInvite(event) {
   const name = dom.inviteName.value.trim();
   if (!name) return;
   const token = crypto.randomUUID();
+  const emailInterno = internalEmailForInvite(token);
   await setDoc(doc(db, invitesCollection, token), {
     nome: name,
     perfil: "montagem",
+    emailInterno,
     used: false,
     createdByUid: state.authUser.uid,
     createdByName: state.profile.nome,
@@ -602,6 +624,32 @@ async function createInvite(event) {
     // Clipboard can be blocked by the browser; the link remains selectable.
   }
   dom.inviteName.value = "";
+}
+
+async function removeMember(uid) {
+  if (!currentRole().canDelete) return;
+  const member = state.team.find((item) => item.uid === uid);
+  if (!member) return;
+  const assigned = assignedCountFor(uid);
+  const detail = assigned ? ` Ele tem ${assigned} OS atribuida(s); elas ficarao sem responsavel.` : "";
+  if (!confirm(`Excluir usuario ${member.nome}?${detail}`)) return;
+
+  const updates = state.services
+    .filter((service) => service.assignedMountingUid === uid)
+    .map((service) =>
+      updateDoc(doc(db, servicesCollection, service.id), {
+        assignedMountingUid: "",
+        assignedMountingName: "",
+        updatedAt: serverTimestamp(),
+      })
+    );
+  await Promise.all(updates);
+  await updateDoc(doc(db, usersCollection, uid), {
+    ativo: false,
+    removedAt: serverTimestamp(),
+    removedByUid: state.authUser.uid,
+    removedByName: state.profile.nome,
+  });
 }
 
 function setFieldLocking() {
@@ -899,6 +947,7 @@ function bindEvents() {
     const { action, id } = actionButton.dataset;
     if (action === "open") showDetail(id);
     if (action === "edit") editService(id);
+    if (action === "remove-member") removeMember(id);
   });
 
   dom.form.addEventListener("submit", saveForm);
