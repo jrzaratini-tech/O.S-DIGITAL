@@ -1,10 +1,39 @@
-const STORAGE_KEY = "os-digital-services-v1";
-const ROLE_KEY = "os-digital-role";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+import {
+  createUserWithEmailAndPassword,
+  getAuth,
+  onAuthStateChanged,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signOut,
+  updateProfile,
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  getFirestore,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where,
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { adminUsers, firebaseConfig } from "./firebase.config.js";
+
+const inviteToken = new URLSearchParams(window.location.search).get("convite");
+const inviteMode = Boolean(inviteToken);
+const servicesCollection = "servicos";
+const usersCollection = "usuarios";
+const invitesCollection = "convites";
 
 const roles = {
   comercial: {
-    name: "Greice",
-    title: "Comercial",
+    label: "Comercial",
     canCreate: true,
     canDelete: true,
     canEditService: true,
@@ -13,18 +42,16 @@ const roles = {
     canCompleteMounting: true,
   },
   projetista: {
-    name: "Zaratini",
-    title: "Projetista",
-    canCreate: false,
-    canDelete: false,
+    label: "Projetista",
+    canCreate: true,
+    canDelete: true,
     canEditService: true,
-    canSetPriority: false,
+    canSetPriority: true,
     canCompleteProject: true,
     canCompleteMounting: true,
   },
   montagem: {
-    name: "Joao",
-    title: "Montagem",
+    label: "Montagem",
     canCreate: false,
     canDelete: false,
     canEditService: false,
@@ -67,15 +94,36 @@ const workflows = {
 };
 
 const state = {
+  appReady: false,
+  authUser: null,
+  profile: null,
   services: [],
-  role: localStorage.getItem(ROLE_KEY) || "comercial",
+  team: [],
+  invites: [],
+  invite: null,
   view: "fila",
   search: "",
   status: "todos",
+  unsubscribeServices: null,
+  unsubscribeTeam: null,
+  unsubscribeInvites: null,
 };
 
 const dom = {
-  roleSelect: document.querySelector("#roleSelect"),
+  userName: document.querySelector("#userName"),
+  logoutButton: document.querySelector("#logoutButton"),
+  authView: document.querySelector("#authView"),
+  appView: document.querySelector("#appView"),
+  authTitle: document.querySelector("#authTitle"),
+  authText: document.querySelector("#authText"),
+  authForm: document.querySelector("#authForm"),
+  nameField: document.querySelector("#nameField"),
+  authName: document.querySelector("#authName"),
+  authEmail: document.querySelector("#authEmail"),
+  authPassword: document.querySelector("#authPassword"),
+  authSubmit: document.querySelector("#authSubmit"),
+  forgotPasswordButton: document.querySelector("#forgotPasswordButton"),
+  authMessage: document.querySelector("#authMessage"),
   tabs: document.querySelectorAll(".tab"),
   views: document.querySelectorAll(".view"),
   permissionBanner: document.querySelector("#permissionBanner"),
@@ -91,6 +139,7 @@ const dom = {
   dimensions: document.querySelector("#dimensions"),
   notes: document.querySelector("#notes"),
   attachments: document.querySelector("#attachments"),
+  assignedMountingUid: document.querySelector("#assignedMountingUid"),
   superPriority: document.querySelector("#superPriority"),
   deleteButton: document.querySelector("#deleteButton"),
   resetFormButton: document.querySelector("#resetFormButton"),
@@ -99,10 +148,28 @@ const dom = {
   metricsGrid: document.querySelector("#metricsGrid"),
   auditList: document.querySelector("#auditList"),
   exportButton: document.querySelector("#exportButton"),
+  inviteForm: document.querySelector("#inviteForm"),
+  inviteName: document.querySelector("#inviteName"),
+  inviteResult: document.querySelector("#inviteResult"),
+  teamList: document.querySelector("#teamList"),
   dialog: document.querySelector("#serviceDialog"),
   detail: document.querySelector("#serviceDetail"),
   emptyTemplate: document.querySelector("#emptyStateTemplate"),
 };
+
+let auth;
+let db;
+
+function showAuthMessage(text, isError = false) {
+  dom.authMessage.hidden = false;
+  dom.authMessage.textContent = text;
+  dom.authMessage.classList.toggle("is-error", isError);
+}
+
+function clearAuthMessage() {
+  dom.authMessage.hidden = true;
+  dom.authMessage.textContent = "";
+}
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -119,10 +186,17 @@ function formatDate(value) {
 
 function formatDateTime(value) {
   if (!value) return "Pendente";
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(new Date(value));
+  if (value.toDate) {
+    return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(value.toDate());
+  }
+  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
+}
+
+function dateMillis(value) {
+  if (!value) return 0;
+  if (value.toMillis) return value.toMillis();
+  if (value.toDate) return value.toDate().getTime();
+  return new Date(value).getTime();
 }
 
 function slugify(text) {
@@ -141,85 +215,16 @@ function makeSteps(labels) {
     done: false,
     timestamp: null,
     operator: null,
+    operatorUid: null,
   }));
 }
 
-function seedServices() {
-  const baseDate = todayIso();
-  return [
-    {
-      id: "OS-2026-X89",
-      clientName: "Restaurante Gourmet S/A",
-      productType: "Luz Frontal",
-      deliveryDate: "2026-06-15",
-      superPriority: true,
-      dimensions: "300cm x 80cm",
-      notes: "Fixacao em estrutura metalica existente.",
-      attachments: ["logo-restaurante.svg", "fachada-referencia.jpg"],
-      createdBy: "Greice",
-      createdAt: "2026-05-25T08:00:00.000Z",
-      updatedAt: "2026-05-25T11:00:00.000Z",
-      project: makeSteps(workflows["Luz Frontal"].project),
-      mounting: makeSteps(workflows["Luz Frontal"].mounting),
-    },
-    {
-      id: "OS-2026-102",
-      clientName: "Clinica Horizonte",
-      productType: "Logo Flutuante",
-      deliveryDate: baseDate,
-      superPriority: false,
-      dimensions: "180cm x 120cm",
-      notes: "Logo em ACM com afastadores pretos.",
-      attachments: ["marca-clinica.pdf"],
-      createdBy: "Greice",
-      createdAt: timestamp(),
-      updatedAt: timestamp(),
-      project: makeSteps(workflows["Logo Flutuante"].project),
-      mounting: makeSteps(workflows["Logo Flutuante"].mounting),
-    },
-    {
-      id: "OS-2026-103",
-      clientName: "Bar Aurora",
-      productType: "Neon",
-      deliveryDate: "2026-06-03",
-      superPriority: false,
-      dimensions: "220cm x 60cm",
-      notes: "Neon flexivel vermelho com base acrilica transparente.",
-      attachments: [],
-      createdBy: "Greice",
-      createdAt: timestamp(),
-      updatedAt: timestamp(),
-      project: makeSteps(workflows.Neon.project),
-      mounting: makeSteps(workflows.Neon.mounting),
-    },
-  ];
-}
-
-function loadServices() {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (!stored) {
-    state.services = seedServices();
-    saveServices();
-    return;
-  }
-  try {
-    state.services = JSON.parse(stored);
-  } catch {
-    state.services = seedServices();
-    saveServices();
-  }
-}
-
-function saveServices() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.services));
-}
-
 function currentRole() {
-  return roles[state.role];
+  return roles[state.profile?.perfil] || roles.montagem;
 }
 
 function allSteps(service) {
-  return [...service.project, ...service.mounting];
+  return [...(service.project || []), ...(service.mounting || [])];
 }
 
 function progress(service) {
@@ -229,59 +234,301 @@ function progress(service) {
 }
 
 function statusOf(service) {
-  const projectDone = service.project.every((step) => step.done);
-  const mountingDone = service.mounting.every((step) => step.done);
-  if (mountingDone && projectDone) return "Concluído";
+  const projectDone = (service.project || []).every((step) => step.done);
+  const mountingDone = (service.mounting || []).every((step) => step.done);
+  if (mountingDone && projectDone) return "Concluido";
   if (projectDone) return "Em montagem";
-  if (service.project.some((step) => step.done)) return "Em projeto";
+  if ((service.project || []).some((step) => step.done)) return "Em projeto";
   return "Aguardando projeto";
+}
+
+function fixedUserForEmail(email) {
+  const normalized = email.trim().toLowerCase();
+  return adminUsers.find((user) => user.email.toLowerCase() === normalized) || null;
+}
+
+function hasValidFirebaseConfig() {
+  return Boolean(firebaseConfig?.apiKey && !firebaseConfig.apiKey.includes("SUA_") && firebaseConfig.projectId);
+}
+
+async function ensureUserProfile(user) {
+  const userRef = doc(db, usersCollection, user.uid);
+  const snapshot = await getDoc(userRef);
+  if (snapshot.exists()) {
+    const profile = snapshot.data();
+    if (!profile.ativo) throw new Error("Seu usuario esta desativado. Fale com o Comercial ou Projetista.");
+    return { uid: user.uid, ...profile };
+  }
+
+  const fixedUser = fixedUserForEmail(user.email || "");
+  if (fixedUser) {
+    const profile = {
+      nome: fixedUser.nome,
+      email: user.email,
+      perfil: fixedUser.perfil,
+      ativo: true,
+      fixo: true,
+      createdAt: serverTimestamp(),
+    };
+    await setDoc(userRef, profile);
+    return { uid: user.uid, ...profile };
+  }
+
+  throw new Error("Usuario sem perfil. Montadores devem usar o link de convite; Greice e Zaratini devem estar em firebase.config.js.");
+}
+
+async function loadInvite() {
+  if (!inviteMode) return null;
+  const inviteRef = doc(db, invitesCollection, inviteToken);
+  const snapshot = await getDoc(inviteRef);
+  if (!snapshot.exists()) throw new Error("Convite invalido ou removido.");
+  const invite = { id: snapshot.id, ...snapshot.data() };
+  if (invite.used) throw new Error("Este convite ja foi usado.");
+  if (invite.perfil !== "montagem") throw new Error("Este convite nao e de montagem.");
+  state.invite = invite;
+  dom.authName.value = invite.nome || "";
+  dom.authName.disabled = true;
+  return invite;
+}
+
+async function handleAuthSubmit(event) {
+  event.preventDefault();
+  clearAuthMessage();
+  const email = dom.authEmail.value.trim();
+  const password = dom.authPassword.value;
+  dom.authSubmit.disabled = true;
+
+  try {
+    if (inviteMode) {
+      const invite = state.invite || (await loadInvite());
+      const name = invite.nome;
+      if (!name) throw new Error("Informe o nome do montador.");
+      const credential = await createUserWithEmailAndPassword(auth, email, password);
+      await updateProfile(credential.user, { displayName: name });
+      await setDoc(doc(db, usersCollection, credential.user.uid), {
+        nome: name,
+        email,
+        perfil: "montagem",
+        ativo: true,
+        fixo: false,
+        conviteId: inviteToken,
+        createdAt: serverTimestamp(),
+      });
+      await updateDoc(doc(db, invitesCollection, inviteToken), {
+        used: true,
+        usedByUid: credential.user.uid,
+        usedByEmail: email,
+        usedAt: serverTimestamp(),
+      });
+      showAuthMessage("Cadastro criado. Entrando no sistema...");
+      return;
+    }
+
+    await signInWithEmailAndPassword(auth, email, password);
+  } catch (error) {
+    showAuthMessage(readableAuthError(error), true);
+  } finally {
+    dom.authSubmit.disabled = false;
+  }
+}
+
+function readableAuthError(error) {
+  const code = error?.code || "";
+  if (code.includes("auth/invalid-credential")) return "E-mail ou senha incorretos.";
+  if (code.includes("auth/email-already-in-use")) return "Este e-mail ja foi cadastrado.";
+  if (code.includes("auth/weak-password")) return "A senha precisa ter pelo menos 6 caracteres.";
+  if (code.includes("auth/operation-not-allowed")) return "Ative E-mail/senha no Firebase Authentication.";
+  return error?.message || "Nao foi possivel autenticar.";
+}
+
+async function handlePasswordReset() {
+  clearAuthMessage();
+  const email = dom.authEmail.value.trim();
+  if (!email) {
+    showAuthMessage("Digite o e-mail para receber a recuperacao de senha.", true);
+    return;
+  }
+  try {
+    await sendPasswordResetEmail(auth, email);
+    showAuthMessage("E-mail de recuperacao enviado.");
+  } catch (error) {
+    showAuthMessage(readableAuthError(error), true);
+  }
+}
+
+function renderAuthState() {
+  if (inviteMode) {
+    dom.authTitle.textContent = "Cadastro de montador";
+    dom.authText.textContent = "Este link exclusivo foi gerado pelo Comercial ou Projetista.";
+    dom.authSubmit.textContent = "Criar acesso";
+    dom.nameField.hidden = false;
+    dom.authName.required = true;
+  } else {
+    dom.authTitle.textContent = "Entrar no sistema";
+    dom.authText.textContent = "Greice e Zaratini entram com e-mail e senha cadastrados no Firebase.";
+    dom.authSubmit.textContent = "Entrar";
+    dom.nameField.hidden = true;
+    dom.authName.required = false;
+  }
+}
+
+function showApp() {
+  dom.authView.hidden = true;
+  dom.appView.hidden = false;
+  dom.logoutButton.hidden = false;
+  dom.userName.textContent = `${state.profile.nome} - ${roles[state.profile.perfil].label}`;
+}
+
+function showLogin() {
+  dom.authView.hidden = false;
+  dom.appView.hidden = true;
+  dom.logoutButton.hidden = true;
+  dom.userName.textContent = "Aguardando login";
+  if (state.unsubscribeServices) {
+    state.unsubscribeServices();
+    state.unsubscribeServices = null;
+  }
+  if (state.unsubscribeTeam) {
+    state.unsubscribeTeam();
+    state.unsubscribeTeam = null;
+  }
+  if (state.unsubscribeInvites) {
+    state.unsubscribeInvites();
+    state.unsubscribeInvites = null;
+  }
+  state.authUser = null;
+  state.profile = null;
+  state.services = [];
+  state.team = [];
+  state.invites = [];
+}
+
+function subscribeServices() {
+  if (state.unsubscribeServices) state.unsubscribeServices();
+  const q =
+    state.profile?.perfil === "montagem"
+      ? query(collection(db, servicesCollection), where("assignedMountingUid", "==", state.authUser.uid))
+      : query(collection(db, servicesCollection));
+  state.unsubscribeServices = onSnapshot(
+    q,
+    (snapshot) => {
+      state.services = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+      render();
+    },
+    (error) => showAuthMessage(`Erro ao ler OS: ${error.message}`, true)
+  );
+}
+
+function subscribeTeam() {
+  if (state.unsubscribeTeam) state.unsubscribeTeam();
+  if (state.unsubscribeInvites) state.unsubscribeInvites();
+  if (!currentRole().canEditService) return;
+
+  state.unsubscribeTeam = onSnapshot(query(collection(db, usersCollection), where("perfil", "==", "montagem")), (snapshot) => {
+    state.team = snapshot.docs.map((item) => ({ uid: item.id, ...item.data() }));
+    renderTeam();
+    renderMountingSelect();
+  });
+
+  state.unsubscribeInvites = onSnapshot(collection(db, invitesCollection), (snapshot) => {
+    state.invites = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+    renderTeam();
+  });
+}
+
+function renderPermissionBanner() {
+  const messages = {
+    comercial: "Acesso total: cria, edita, exclui, conclui etapas e define Super Prioridade.",
+    projetista: "Acesso total: cria, edita, exclui e conclui etapas. Super Prioridade tambem liberada conforme regra de acesso total.",
+    montagem: "Montagem: acesso restrito aos trabalhos de producao. Pode apenas concluir etapas de montagem.",
+  };
+  dom.permissionBanner.textContent = messages[state.profile?.perfil] || "";
+  dom.permissionBanner.hidden = false;
+  dom.tabs.forEach((tab) => {
+    if (tab.dataset.view === "nova") {
+      tab.disabled = !currentRole().canCreate && !currentRole().canEditService;
+    }
+    if (tab.dataset.view === "equipe") {
+      tab.disabled = !currentRole().canEditService;
+    }
+  });
+}
+
+function renderMountingSelect() {
+  const currentValue = dom.assignedMountingUid.value;
+  const activeTeam = state.team.filter((member) => member.ativo !== false);
+  dom.assignedMountingUid.innerHTML = '<option value="">Sem montador definido</option>';
+  activeTeam.forEach((member) => {
+    const option = document.createElement("option");
+    option.value = member.uid;
+    option.textContent = `${member.nome}${member.email ? ` - ${member.email}` : ""}`;
+    dom.assignedMountingUid.append(option);
+  });
+  dom.assignedMountingUid.value = activeTeam.some((member) => member.uid === currentValue) ? currentValue : "";
+}
+
+function renderTeam() {
+  if (!dom.teamList) return;
+  if (!currentRole().canEditService) {
+    dom.teamList.innerHTML = "";
+    return;
+  }
+  const active = state.team
+    .map(
+      (member) => `
+        <div class="audit-item">
+          <strong>${member.nome}</strong>
+          <span>${member.email || "E-mail ainda nao informado"} | ${member.ativo === false ? "Inativo" : "Ativo"}</span>
+        </div>
+      `
+    )
+    .join("");
+  const pending = state.invites
+    .filter((invite) => !invite.used)
+    .map(
+      (invite) => `
+        <div class="audit-item">
+          <strong>${invite.nome}</strong>
+          <span>Convite pendente | ${buildInviteLink(invite.id)}</span>
+        </div>
+      `
+    )
+    .join("");
+  dom.teamList.innerHTML =
+    active || pending
+      ? `${pending}${active}`
+      : '<div class="empty-state"><strong>Nenhum montador cadastrado.</strong><span>Gere um link exclusivo para o primeiro colaborador.</span></div>';
+}
+
+function renderSummary() {
+  const urgent = state.services.filter((service) => service.superPriority && statusOf(service) !== "Concluido").length;
+  const inProject = state.services.filter((service) => statusOf(service) === "Em projeto").length;
+  const inMounting = state.services.filter((service) => statusOf(service) === "Em montagem").length;
+  const done = state.services.filter((service) => statusOf(service) === "Concluido").length;
+  dom.queueSummary.innerHTML = [
+    ["Urgentes hoje", urgent],
+    ["Em projeto", inProject],
+    ["Em montagem", inMounting],
+    ["Concluidas", done],
+  ]
+    .map(([label, value]) => `<div class="summary-item"><strong>${value}</strong><span>${label}</span></div>`)
+    .join("");
 }
 
 function sortedServices() {
   return [...state.services].sort((a, b) => {
     if (a.superPriority !== b.superPriority) return a.superPriority ? -1 : 1;
-    return a.deliveryDate.localeCompare(b.deliveryDate);
+    return String(a.deliveryDate || "").localeCompare(String(b.deliveryDate || ""));
   });
 }
 
 function filteredServices() {
-  const query = state.search.trim().toLowerCase();
+  const queryText = state.search.trim().toLowerCase();
   return sortedServices().filter((service) => {
     const matchesStatus = state.status === "todos" || statusOf(service) === state.status;
     const haystack = [service.id, service.clientName, service.productType, service.notes].join(" ").toLowerCase();
-    return matchesStatus && (!query || haystack.includes(query));
+    return matchesStatus && (!queryText || haystack.includes(queryText));
   });
-}
-
-function renderPermissionBanner() {
-  const role = currentRole();
-  const messages = {
-    comercial: "Acesso total: cria, edita, exclui e define a fila de Super Prioridade.",
-    projetista: "Projetista: edita campos e conclui etapas de projeto, sem criar, excluir ou mudar prioridade.",
-    montagem: "Montagem: somente conclui etapas de montagem. Campos comerciais e de projeto ficam blindados.",
-  };
-  dom.permissionBanner.textContent = messages[state.role];
-  dom.permissionBanner.hidden = false;
-  dom.tabs.forEach((tab) => {
-    if (tab.dataset.view === "nova") {
-      tab.disabled = !role.canCreate && !role.canEditService;
-    }
-  });
-}
-
-function renderSummary() {
-  const urgent = state.services.filter((service) => service.superPriority && statusOf(service) !== "Concluído").length;
-  const inProject = state.services.filter((service) => statusOf(service) === "Em projeto").length;
-  const inMounting = state.services.filter((service) => statusOf(service) === "Em montagem").length;
-  const done = state.services.filter((service) => statusOf(service) === "Concluído").length;
-  dom.queueSummary.innerHTML = [
-    ["Urgentes hoje", urgent],
-    ["Em projeto", inProject],
-    ["Em montagem", inMounting],
-    ["Concluídas", done],
-  ]
-    .map(([label, value]) => `<div class="summary-item"><strong>${value}</strong><span>${label}</span></div>`)
-    .join("");
 }
 
 function renderServiceList() {
@@ -298,14 +545,15 @@ function renderServiceList() {
     card.innerHTML = `
       <div class="service-main">
         <div class="service-title">
-          <h3>${service.id} - ${service.clientName}</h3>
+          <h3>${service.osNumber || service.id} - ${service.clientName}</h3>
           ${service.superPriority ? '<span class="tag priority">Prioridade hoje</span>' : ""}
           <span class="tag">${statusOf(service)}</span>
         </div>
         <div class="service-meta">
           <span>${service.productType}</span>
           <span>Entrega: ${formatDate(service.deliveryDate)}</span>
-          <span>${progress(service)}% concluído</span>
+          <span>Montagem: ${service.assignedMountingName || "sem responsavel"}</span>
+          <span>${progress(service)}% concluido</span>
         </div>
         <div class="progress-line" aria-label="Progresso ${progress(service)}%">
           <span style="width: ${progress(service)}%"></span>
@@ -324,12 +572,45 @@ function renderServiceList() {
   });
 }
 
+function buildInviteLink(token) {
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.searchParams.set("convite", token);
+  return url.toString();
+}
+
+async function createInvite(event) {
+  event.preventDefault();
+  if (!currentRole().canEditService) return;
+  const name = dom.inviteName.value.trim();
+  if (!name) return;
+  const token = crypto.randomUUID();
+  await setDoc(doc(db, invitesCollection, token), {
+    nome: name,
+    perfil: "montagem",
+    used: false,
+    createdByUid: state.authUser.uid,
+    createdByName: state.profile.nome,
+    createdAt: serverTimestamp(),
+  });
+  const link = buildInviteLink(token);
+  dom.inviteResult.hidden = false;
+  dom.inviteResult.innerHTML = `<strong>Link exclusivo de ${name}</strong><br><input readonly value="${link}" onclick="this.select()">`;
+  try {
+    await navigator.clipboard.writeText(link);
+  } catch {
+    // Clipboard can be blocked by the browser; the link remains selectable.
+  }
+  dom.inviteName.value = "";
+}
+
 function setFieldLocking() {
   const role = currentRole();
   const fields = [dom.clientName, dom.productType, dom.deliveryDate, dom.dimensions, dom.notes, dom.attachments];
   fields.forEach((field) => {
     field.disabled = !role.canEditService;
   });
+  dom.assignedMountingUid.disabled = !role.canEditService;
   dom.superPriority.disabled = !role.canSetPriority;
   dom.form.querySelector(".primary-button").disabled = !role.canCreate && !role.canEditService;
 }
@@ -346,18 +627,18 @@ function serviceFromForm(existing) {
   const type = dom.productType.value;
   const keepSteps = existing && existing.productType === type;
   return {
-    id: existing?.id || `OS-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+    osNumber: existing?.osNumber || `OS-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
     clientName: dom.clientName.value.trim(),
     productType: type,
     deliveryDate: dom.deliveryDate.value,
     superPriority: dom.superPriority.checked,
     dimensions: dom.dimensions.value.trim(),
     notes: dom.notes.value.trim(),
-    attachments: [
-      ...(existing?.attachments || []),
-      ...Array.from(dom.attachments.files || []).map((file) => file.name),
-    ],
-    createdBy: existing?.createdBy || currentRole().name,
+    attachments: [...(existing?.attachments || []), ...Array.from(dom.attachments.files || []).map((file) => file.name)],
+    assignedMountingUid: dom.assignedMountingUid.value || "",
+    assignedMountingName: state.team.find((member) => member.uid === dom.assignedMountingUid.value)?.nome || "",
+    createdBy: existing?.createdBy || state.profile.nome,
+    createdByUid: existing?.createdByUid || state.authUser.uid,
     createdAt: existing?.createdAt || timestamp(),
     updatedAt: timestamp(),
     project: keepSteps ? existing.project : makeSteps(workflows[type].project),
@@ -367,57 +648,48 @@ function serviceFromForm(existing) {
 
 function editService(id) {
   const service = state.services.find((item) => item.id === id);
-  if (!service) return;
+  if (!service || !currentRole().canEditService) return;
   dom.editingId.value = service.id;
-  dom.clientName.value = service.clientName;
-  dom.productType.value = service.productType;
-  dom.deliveryDate.value = service.deliveryDate;
-  dom.dimensions.value = service.dimensions;
-  dom.notes.value = service.notes;
-  dom.superPriority.checked = service.superPriority;
+  dom.clientName.value = service.clientName || "";
+  dom.productType.value = service.productType || "Luz Frontal";
+  dom.deliveryDate.value = service.deliveryDate || todayIso();
+  dom.dimensions.value = service.dimensions || "";
+  dom.notes.value = service.notes || "";
+  renderMountingSelect();
+  dom.assignedMountingUid.value = service.assignedMountingUid || "";
+  dom.superPriority.checked = Boolean(service.superPriority);
   dom.deleteButton.hidden = !currentRole().canDelete;
   setView("nova");
   setFieldLocking();
 }
 
-function saveForm(event) {
+async function saveForm(event) {
   event.preventDefault();
   const role = currentRole();
   const existing = state.services.find((service) => service.id === dom.editingId.value);
-  if (!existing && !role.canCreate) {
-    alert("Seu perfil nao pode criar novas ordens de servico.");
-    return;
-  }
-  if (existing && !role.canEditService) {
-    alert("Seu perfil nao pode editar campos desta OS.");
-    return;
-  }
+  if (!existing && !role.canCreate) return alert("Seu perfil nao pode criar novas ordens de servico.");
+  if (existing && !role.canEditService) return alert("Seu perfil nao pode editar campos desta OS.");
+
   const service = serviceFromForm(existing);
-  if (existing && !role.canSetPriority) {
-    service.superPriority = existing.superPriority;
-  }
   if (existing) {
-    state.services = state.services.map((item) => (item.id === existing.id ? service : item));
+    await updateDoc(doc(db, servicesCollection, existing.id), { ...service, updatedAt: serverTimestamp() });
   } else {
-    state.services.push(service);
+    await addDoc(collection(db, servicesCollection), { ...service, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
   }
-  saveServices();
   resetForm();
   setView("fila");
-  render();
 }
 
-function deleteCurrentService() {
+async function deleteCurrentService() {
   if (!currentRole().canDelete) return;
   const id = dom.editingId.value;
   if (!id) return;
-  const confirmed = confirm(`Excluir a ${id}? Esta acao remove a OS do armazenamento local.`);
-  if (!confirmed) return;
-  state.services = state.services.filter((service) => service.id !== id);
-  saveServices();
+  const service = state.services.find((item) => item.id === id);
+  const label = service?.osNumber || id;
+  if (!confirm(`Excluir a ${label}?`)) return;
+  await deleteDoc(doc(db, servicesCollection, id));
   resetForm();
   setView("fila");
-  render();
 }
 
 function canToggleStep(group) {
@@ -425,25 +697,31 @@ function canToggleStep(group) {
   return currentRole().canCompleteMounting;
 }
 
-function toggleStep(serviceId, group, stepId, checked) {
+async function toggleStep(serviceId, group, stepId, checked) {
   const service = state.services.find((item) => item.id === serviceId);
   if (!service || !canToggleStep(group)) return;
-  const step = service[group].find((item) => item.id === stepId);
-  if (!step) return;
-  if (step.done && !checked && state.role === "montagem") {
-    alert("Etapas de montagem concluidas nao podem ser desmarcadas por este perfil.");
-    return;
-  }
-  step.done = checked;
-  step.timestamp = checked ? timestamp() : null;
-  step.operator = checked ? currentRole().name : null;
-  service.updatedAt = timestamp();
-  if (statusOf(service) === "Concluído") {
-    service.superPriority = false;
-  }
-  saveServices();
-  showDetail(service.id);
-  render();
+  const nextSteps = service[group].map((step) => {
+    if (step.id !== stepId) return step;
+    if (step.done && !checked && state.profile.perfil === "montagem") {
+      alert("Etapas concluidas pela montagem nao podem ser desmarcadas por este perfil.");
+      return step;
+    }
+    return {
+      ...step,
+      done: checked,
+      timestamp: checked ? timestamp() : null,
+      operator: checked ? state.profile.nome : null,
+      operatorUid: checked ? state.authUser.uid : null,
+    };
+  });
+  const nextService = { ...service, [group]: nextSteps };
+  const nextStatus = statusOf(nextService);
+  const update = {
+    [group]: nextSteps,
+    updatedAt: serverTimestamp(),
+  };
+  if (nextStatus === "Concluido" && state.profile.perfil !== "montagem") update.superPriority = false;
+  await updateDoc(doc(db, servicesCollection, serviceId), update);
 }
 
 function renderChecklist(service, group, title) {
@@ -451,7 +729,7 @@ function renderChecklist(service, group, title) {
     <div class="detail-box wide">
       <h3>${title}</h3>
       <div class="checklist">
-        ${service[group]
+        ${(service[group] || [])
           .map(
             (step) => `
               <label class="step-row">
@@ -483,7 +761,7 @@ function showDetail(id) {
     <div class="detail-header">
       <div>
         <p class="eyebrow">${service.productType}</p>
-        <h2>${service.id} - ${service.clientName}</h2>
+        <h2>${service.osNumber || service.id} - ${service.clientName}</h2>
       </div>
       <div>
         ${service.superPriority ? '<span class="tag priority">Prioridade hoje</span>' : ""}
@@ -493,20 +771,17 @@ function showDetail(id) {
     <div class="detail-grid">
       <div class="detail-box"><strong>Entrega</strong><br>${formatDate(service.deliveryDate)}</div>
       <div class="detail-box"><strong>Medidas</strong><br>${service.dimensions || "Nao informado"}</div>
+      <div class="detail-box wide"><strong>Responsavel pela montagem</strong><br>${service.assignedMountingName || "Sem montador definido"}</div>
       <div class="detail-box wide"><strong>Observacoes</strong><br>${service.notes || "Sem observacoes"}</div>
-      <div class="detail-box wide"><strong>Arquivos</strong><br>${service.attachments.length ? service.attachments.join(", ") : "Nenhum arquivo registrado"}</div>
+      <div class="detail-box wide"><strong>Arquivos</strong><br>${service.attachments?.length ? service.attachments.join(", ") : "Nenhum arquivo registrado"}</div>
       ${renderChecklist(service, "project", "Fase 1 - Projeto")}
       ${renderChecklist(service, "mounting", "Fase 2 - Montagem")}
     </div>
   `;
   dom.detail.querySelectorAll("input[type='checkbox']").forEach((checkbox) => {
-    checkbox.addEventListener("change", (event) => {
-      toggleStep(
-        event.target.dataset.service,
-        event.target.dataset.group,
-        event.target.dataset.step,
-        event.target.checked
-      );
+    checkbox.addEventListener("change", async (event) => {
+      await toggleStep(event.target.dataset.service, event.target.dataset.group, event.target.dataset.step, event.target.checked);
+      showDetail(event.target.dataset.service);
     });
   });
   if (!dom.dialog.open) dom.dialog.showModal();
@@ -536,7 +811,7 @@ function renderCalendar() {
         ${services
           .map(
             (service) =>
-              `<button class="calendar-pill${service.superPriority ? " is-priority" : ""}" data-action="open" data-id="${service.id}" type="button">${service.id} - ${service.clientName}</button>`
+              `<button class="calendar-pill${service.superPriority ? " is-priority" : ""}" data-action="open" data-id="${service.id}" type="button">${service.osNumber || service.id} - ${service.clientName}</button>`
           )
           .join("")}
       </div>
@@ -551,28 +826,30 @@ function renderMetrics() {
       .filter((step) => step.done)
       .map((step) => ({ service, step }))
   );
-  const completedServices = state.services.filter((service) => statusOf(service) === "Concluído").length;
+  const completedServices = state.services.filter((service) => statusOf(service) === "Concluido").length;
   const percent = state.services.length ? Math.round((completedServices / state.services.length) * 100) : 0;
   dom.metricsGrid.innerHTML = [
     ["OS cadastradas", state.services.length],
     ["Etapas auditadas", completedSteps.length],
     ["OS finalizadas", completedServices],
-    ["Conclusão geral", `${percent}%`],
+    ["Conclusao geral", `${percent}%`],
   ]
     .map(([label, value]) => `<div class="summary-item"><strong>${value}</strong><span>${label}</span></div>`)
     .join("");
 
   const auditItems = completedSteps
-    .sort((a, b) => new Date(b.step.timestamp) - new Date(a.step.timestamp))
+    .sort((a, b) => dateMillis(b.step.timestamp) - dateMillis(a.step.timestamp))
     .map(
       ({ service, step }) => `
         <div class="audit-item">
-          <strong>${service.id} - ${step.label}</strong>
+          <strong>${service.osNumber || service.id} - ${step.label}</strong>
           <span>${service.clientName} | ${step.operator} | ${formatDateTime(step.timestamp)}</span>
         </div>
       `
     );
-  dom.auditList.innerHTML = auditItems.length ? auditItems.join("") : "<div class=\"empty-state\"><strong>Nenhuma etapa concluida ainda.</strong><span>Os timestamps aparecem aqui automaticamente.</span></div>";
+  dom.auditList.innerHTML = auditItems.length
+    ? auditItems.join("")
+    : '<div class="empty-state"><strong>Nenhuma etapa concluida ainda.</strong><span>Os timestamps aparecem aqui automaticamente.</span></div>';
 }
 
 function exportJson() {
@@ -596,18 +873,13 @@ function render() {
 }
 
 function bindEvents() {
-  dom.roleSelect.value = state.role;
-  dom.roleSelect.addEventListener("change", (event) => {
-    state.role = event.target.value;
-    localStorage.setItem(ROLE_KEY, state.role);
-    resetForm();
-    render();
-  });
+  dom.authForm.addEventListener("submit", handleAuthSubmit);
+  dom.forgotPasswordButton.addEventListener("click", handlePasswordReset);
+  dom.logoutButton.addEventListener("click", () => signOut(auth));
 
   dom.tabs.forEach((tab) => {
     tab.addEventListener("click", () => {
-      if (tab.disabled) return;
-      setView(tab.dataset.view);
+      if (!tab.disabled) setView(tab.dataset.view);
     });
   });
 
@@ -630,18 +902,81 @@ function bindEvents() {
   });
 
   dom.form.addEventListener("submit", saveForm);
+  dom.inviteForm.addEventListener("submit", createInvite);
   dom.deleteButton.addEventListener("click", deleteCurrentService);
   dom.resetFormButton.addEventListener("click", resetForm);
   dom.monthPicker.addEventListener("change", renderCalendar);
   dom.exportButton.addEventListener("click", exportJson);
 }
 
+async function seedFirstServicesIfEmpty() {
+  if (!currentRole().canCreate) return;
+  const snapshot = await getDocs(collection(db, servicesCollection));
+  if (!snapshot.empty) return;
+  await addDoc(collection(db, servicesCollection), {
+    osNumber: "OS-2026-X89",
+    clientName: "Restaurante Gourmet S/A",
+    productType: "Luz Frontal",
+    deliveryDate: "2026-06-15",
+    superPriority: true,
+    dimensions: "300cm x 80cm",
+    notes: "Fixacao em estrutura metalica existente.",
+    attachments: ["logo-restaurante.svg", "fachada-referencia.jpg"],
+    assignedMountingUid: "",
+    assignedMountingName: "",
+    createdBy: state.profile.nome,
+    createdByUid: state.authUser.uid,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    project: makeSteps(workflows["Luz Frontal"].project),
+    mounting: makeSteps(workflows["Luz Frontal"].mounting),
+  });
+}
+
+function initFirebase() {
+  renderAuthState();
+  if (!hasValidFirebaseConfig()) {
+    showAuthMessage("Configure o arquivo firebase.config.js com as credenciais do projeto Firebase antes de usar o login.", true);
+    dom.authSubmit.disabled = true;
+    return;
+  }
+  const app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+  if (inviteMode) {
+    loadInvite().catch((error) => {
+      showAuthMessage(error.message, true);
+      dom.authSubmit.disabled = true;
+    });
+  }
+
+  onAuthStateChanged(auth, async (user) => {
+    clearAuthMessage();
+    if (!user) {
+      showLogin();
+      return;
+    }
+    try {
+      state.authUser = user;
+      state.profile = await ensureUserProfile(user);
+      showApp();
+      resetForm();
+      await seedFirstServicesIfEmpty();
+      subscribeTeam();
+      subscribeServices();
+    } catch (error) {
+      await signOut(auth);
+      showLogin();
+      showAuthMessage(error.message, true);
+    }
+  });
+}
+
 function init() {
-  loadServices();
   bindEvents();
   dom.deliveryDate.value = todayIso();
   dom.monthPicker.value = todayIso().slice(0, 7);
-  render();
+  initFirebase();
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   }

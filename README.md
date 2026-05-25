@@ -18,7 +18,12 @@ Abra `index.html` no navegador. O app funciona sem servidor usando `localStorage
 - Exportação JSON dos dados.
 - Estrutura PWA com manifesto e service worker.
 - Arquivo `firebase.example.js` com ponto de partida para Firestore.
+- Login com Firebase Auth.
+- Convite nominal e exclusivo para montadores.
+- Atribuicao de OS por montador: cada montador ve apenas os proprios trabalhos.
 
 ## Próximo passo para nuvem
 
-Crie um projeto Firebase com Authentication, Firestore e Storage. Depois conecte o app a uma camada de dados Firestore e aplique regras de segurança equivalentes ao RBAC descrito no guia.
+Preencha `firebase.config.js` com as credenciais do Firebase Web App. Depois cole o conteudo de `firestore.rules` em Firestore Database > Regras e publique.
+
+No Firebase Authentication, ative o metodo E-mail/senha. Crie manualmente os usuarios fixos Greice e Zaratini em Authentication > Usuarios. Os montadores devem entrar somente por link gerado na aba Equipe.

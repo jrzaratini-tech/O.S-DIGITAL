@@ -15,119 +15,169 @@
           <p class="eyebrow">SG-CV</p>
           <h1>OS Digital</h1>
         </div>
-        <label class="role-picker">
-          <span>Usuário</span>
-          <select id="roleSelect" aria-label="Selecionar usuário">
-            <option value="comercial">Greice - Comercial</option>
-            <option value="projetista">Zaratini - Projetista</option>
-            <option value="montagem">João - Montagem</option>
-          </select>
-        </label>
+        <div class="user-box">
+          <span id="userName">Aguardando login</span>
+          <button id="logoutButton" class="ghost-button" type="button" hidden>Sair</button>
+        </div>
       </header>
 
-      <nav class="tabs" aria-label="Navegação principal">
-        <button class="tab is-active" data-view="fila" type="button">Fila</button>
-        <button class="tab" data-view="nova" type="button">Nova OS</button>
-        <button class="tab" data-view="calendario" type="button">Calendário</button>
-        <button class="tab" data-view="metricas" type="button">Métricas</button>
-      </nav>
+      <section id="authView" class="auth-panel">
+        <div>
+          <p class="eyebrow">Acesso seguro</p>
+          <h2 id="authTitle">Entrar no sistema</h2>
+          <p id="authText">Use o e-mail e senha cadastrados no Firebase.</p>
+        </div>
+        <form id="authForm" class="auth-form">
+          <label id="nameField" hidden>
+            Nome completo
+            <input id="authName" autocomplete="name" placeholder="Nome do montador">
+          </label>
+          <label>
+            E-mail
+            <input id="authEmail" required type="email" autocomplete="email" placeholder="email@empresa.com">
+          </label>
+          <label>
+            Senha
+            <input id="authPassword" required type="password" autocomplete="current-password" minlength="6" placeholder="Minimo 6 caracteres">
+          </label>
+          <button id="authSubmit" class="primary-button" type="submit">Entrar</button>
+          <button id="forgotPasswordButton" class="ghost-button" type="button">Recuperar senha</button>
+        </form>
+        <div id="authMessage" class="notice" hidden></div>
+      </section>
 
-      <main>
-        <section id="view-fila" class="view is-active" aria-labelledby="filaTitle">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow">Produção</p>
-              <h2 id="filaTitle">Fila operacional</h2>
-            </div>
-            <div class="filters" role="search">
-              <input id="searchInput" type="search" placeholder="Buscar cliente, OS ou observação">
-              <select id="statusFilter" aria-label="Filtrar status">
-                <option value="todos">Todos os status</option>
-                <option value="Aguardando projeto">Aguardando projeto</option>
-                <option value="Em projeto">Em projeto</option>
-                <option value="Em montagem">Em montagem</option>
-                <option value="Concluído">Concluído</option>
-              </select>
-            </div>
-          </div>
-          <div id="permissionBanner" class="notice" hidden></div>
-          <div id="queueSummary" class="summary-grid"></div>
-          <div id="serviceList" class="service-list"></div>
-        </section>
+      <div id="appView" hidden>
+        <nav class="tabs" aria-label="Navegacao principal">
+          <button class="tab is-active" data-view="fila" type="button">Fila</button>
+          <button class="tab" data-view="nova" type="button">Nova OS</button>
+          <button class="tab" data-view="equipe" type="button">Equipe</button>
+          <button class="tab" data-view="calendario" type="button">Calendario</button>
+          <button class="tab" data-view="metricas" type="button">Metricas</button>
+        </nav>
 
-        <section id="view-nova" class="view" aria-labelledby="formTitle">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow">Cadastro</p>
-              <h2 id="formTitle">Ordem de serviço</h2>
+        <main>
+          <section id="view-fila" class="view is-active" aria-labelledby="filaTitle">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Producao</p>
+                <h2 id="filaTitle">Fila operacional</h2>
+              </div>
+              <div class="filters" role="search">
+                <input id="searchInput" type="search" placeholder="Buscar cliente, OS ou observacao">
+                <select id="statusFilter" aria-label="Filtrar status">
+                  <option value="todos">Todos os status</option>
+                  <option value="Aguardando projeto">Aguardando projeto</option>
+                  <option value="Em projeto">Em projeto</option>
+                  <option value="Em montagem">Em montagem</option>
+                  <option value="Concluido">Concluido</option>
+                </select>
+              </div>
             </div>
-            <button id="resetFormButton" class="ghost-button" type="button">Limpar</button>
-          </div>
-          <form id="serviceForm" class="form-grid">
-            <input id="editingId" type="hidden">
-            <label>
-              Cliente
-              <input id="clientName" required autocomplete="organization" placeholder="Nome do cliente">
-            </label>
-            <label>
-              Tipo de produto
-              <select id="productType" required>
-                <option value="Luz Frontal">Letreiro com Luz Frontal</option>
-                <option value="Logo Flutuante">Logo Flutuante</option>
-                <option value="Neon">Letreiro em Neon</option>
-              </select>
-            </label>
-            <label>
-              Entrega prometida
-              <input id="deliveryDate" required type="date">
-            </label>
-            <label>
-              Medidas do letreiro
-              <input id="dimensions" placeholder="Ex.: 300cm x 80cm">
-            </label>
-            <label class="wide">
-              Observações
-              <textarea id="notes" rows="4" placeholder="Fixação, material, acabamento, local de instalação..."></textarea>
-            </label>
-            <label class="wide">
-              Arquivos de referência
-              <input id="attachments" type="file" multiple>
-              <span class="field-help">Os nomes ficam registrados localmente. Para anexos reais em nuvem, ligue o Firebase Storage.</span>
-            </label>
-            <label class="switch-row">
-              <input id="superPriority" type="checkbox">
-              <span>Super Prioridade de Produção</span>
-            </label>
-            <div class="form-actions">
-              <button id="deleteButton" class="danger-button" type="button" hidden>Excluir OS</button>
-              <button class="primary-button" type="submit">Salvar OS</button>
-            </div>
-          </form>
-        </section>
+            <div id="permissionBanner" class="notice" hidden></div>
+            <div id="queueSummary" class="summary-grid"></div>
+            <div id="serviceList" class="service-list"></div>
+          </section>
 
-        <section id="view-calendario" class="view" aria-labelledby="calendarTitle">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow">Agenda</p>
-              <h2 id="calendarTitle">Entregas por data</h2>
+          <section id="view-nova" class="view" aria-labelledby="formTitle">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Cadastro</p>
+                <h2 id="formTitle">Ordem de servico</h2>
+              </div>
+              <button id="resetFormButton" class="ghost-button" type="button">Limpar</button>
             </div>
-            <input id="monthPicker" type="month" aria-label="Selecionar mês">
-          </div>
-          <div id="calendarGrid" class="calendar-grid"></div>
-        </section>
+            <form id="serviceForm" class="form-grid">
+              <input id="editingId" type="hidden">
+              <label>
+                Cliente
+                <input id="clientName" required autocomplete="organization" placeholder="Nome do cliente">
+              </label>
+              <label>
+                Tipo de produto
+                <select id="productType" required>
+                  <option value="Luz Frontal">Letreiro com Luz Frontal</option>
+                  <option value="Logo Flutuante">Logo Flutuante</option>
+                  <option value="Neon">Letreiro em Neon</option>
+                </select>
+              </label>
+              <label>
+                Entrega prometida
+                <input id="deliveryDate" required type="date">
+              </label>
+              <label>
+                Medidas do letreiro
+                <input id="dimensions" placeholder="Ex.: 300cm x 80cm">
+              </label>
+              <label class="wide">
+                Observacoes
+                <textarea id="notes" rows="4" placeholder="Fixacao, material, acabamento, local de instalacao..."></textarea>
+              </label>
+              <label class="wide">
+                Arquivos de referencia
+                <input id="attachments" type="file" multiple>
+                <span class="field-help">Os nomes ficam registrados na OS. Para arquivos reais, ative Firebase Storage depois.</span>
+              </label>
+              <label class="wide">
+                Responsavel pela montagem
+                <select id="assignedMountingUid">
+                  <option value="">Sem montador definido</option>
+                </select>
+              </label>
+              <label class="switch-row">
+                <input id="superPriority" type="checkbox">
+                <span>Super Prioridade de Producao</span>
+              </label>
+              <div class="form-actions">
+                <button id="deleteButton" class="danger-button" type="button" hidden>Excluir OS</button>
+                <button class="primary-button" type="submit">Salvar OS</button>
+              </div>
+            </form>
+          </section>
 
-        <section id="view-metricas" class="view" aria-labelledby="metricsTitle">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow">Auditoria</p>
-              <h2 id="metricsTitle">Timestamps e desempenho</h2>
+          <section id="view-equipe" class="view" aria-labelledby="teamTitle">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Convites</p>
+                <h2 id="teamTitle">Equipe de montagem</h2>
+              </div>
             </div>
-            <button id="exportButton" class="ghost-button" type="button">Exportar JSON</button>
-          </div>
-          <div id="metricsGrid" class="summary-grid"></div>
-          <div id="auditList" class="audit-list"></div>
-        </section>
-      </main>
+            <form id="inviteForm" class="form-grid">
+              <label>
+                Nome do colaborador
+                <input id="inviteName" required placeholder="Ex.: Carlos da montagem">
+              </label>
+              <div class="form-actions">
+                <button class="primary-button" type="submit">Gerar link exclusivo</button>
+              </div>
+            </form>
+            <div id="inviteResult" class="notice" hidden></div>
+            <div id="teamList" class="audit-list"></div>
+          </section>
+
+          <section id="view-calendario" class="view" aria-labelledby="calendarTitle">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Agenda</p>
+                <h2 id="calendarTitle">Entregas por data</h2>
+              </div>
+              <input id="monthPicker" type="month" aria-label="Selecionar mes">
+            </div>
+            <div id="calendarGrid" class="calendar-grid"></div>
+          </section>
+
+          <section id="view-metricas" class="view" aria-labelledby="metricsTitle">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Auditoria</p>
+                <h2 id="metricsTitle">Timestamps e desempenho</h2>
+              </div>
+              <button id="exportButton" class="ghost-button" type="button">Exportar JSON</button>
+            </div>
+            <div id="metricsGrid" class="summary-grid"></div>
+            <div id="auditList" class="audit-list"></div>
+          </section>
+        </main>
+      </div>
     </div>
 
     <dialog id="serviceDialog" class="service-dialog">
@@ -140,10 +190,10 @@
     <template id="emptyStateTemplate">
       <div class="empty-state">
         <strong>Nenhuma OS encontrada.</strong>
-        <span>Ajuste os filtros ou cadastre um novo serviço.</span>
+        <span>Ajuste os filtros ou cadastre um novo servico.</span>
       </div>
     </template>
 
-    <script src="app.js"></script>
+    <script type="module" src="app.js"></script>
   </body>
 </html>

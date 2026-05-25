@@ -90,13 +90,43 @@ h2 {
   font-size: clamp(1.35rem, 3vw, 2rem);
 }
 
-.role-picker {
+.role-picker,
+.user-box {
   display: grid;
   gap: 6px;
   min-width: min(320px, 100%);
   color: var(--muted);
   font-size: 0.86rem;
   font-weight: 700;
+}
+
+.user-box {
+  justify-items: end;
+  color: var(--ink);
+}
+
+.auth-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
+  gap: 18px;
+  align-items: start;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  padding: 18px;
+}
+
+.auth-form {
+  display: grid;
+  gap: 12px;
+}
+
+.auth-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-weight: 800;
 }
 
 select,
@@ -117,7 +147,7 @@ textarea {
 
 .tabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
   margin: 8px 0 20px;
   position: sticky;
@@ -172,6 +202,12 @@ textarea {
   color: #553400;
   padding: 12px 14px;
   font-weight: 700;
+}
+
+.notice.is-error {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: #7d2018;
 }
 
 .summary-grid {
@@ -511,9 +547,11 @@ textarea {
   .topbar,
   .section-head,
   .service-card,
-  .detail-header {
+  .detail-header,
+  .auth-panel {
     align-items: stretch;
     flex-direction: column;
+    grid-template-columns: 1fr;
   }
 
   .tabs {

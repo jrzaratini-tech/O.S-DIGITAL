@@ -1,5 +1,3 @@
-// Exemplo de configuracao. O app usa firebase.config.js em producao.
-
 export const firebaseConfig = {
   apiKey: "SUA_API_KEY",
   authDomain: "SEU_PROJETO.firebaseapp.com",

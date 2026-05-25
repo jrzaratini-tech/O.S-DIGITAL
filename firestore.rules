@@ -1,0 +1,88 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data;
+    }
+
+    function activeUser() {
+      return signedIn() && userDoc().ativo == true;
+    }
+
+    function fullAccess() {
+      return activeUser() && userDoc().perfil in ['comercial', 'projetista'];
+    }
+
+    function mountingAccess() {
+      return activeUser() && userDoc().perfil == 'montagem';
+    }
+
+    function fixedAdminEmail() {
+      return signedIn()
+        && request.auth.token.email in [
+          'EMAIL_DA_GREICE_AQUI',
+          'EMAIL_DO_ZARATINI_AQUI'
+        ];
+    }
+
+    function validInvite(inviteId) {
+      return exists(/databases/$(database)/documents/convites/$(inviteId))
+        && get(/databases/$(database)/documents/convites/$(inviteId)).data.perfil == 'montagem'
+        && get(/databases/$(database)/documents/convites/$(inviteId)).data.used == false
+        && get(/databases/$(database)/documents/convites/$(inviteId)).data.nome == request.resource.data.nome;
+    }
+
+    match /usuarios/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || fullAccess());
+
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && (
+          (
+            request.resource.data.perfil == 'montagem'
+            && request.resource.data.ativo == true
+            && validInvite(request.resource.data.conviteId)
+          )
+          || fixedAdminEmail()
+        );
+
+      allow update, delete: if fullAccess();
+    }
+
+    match /convites/{inviteId} {
+      allow get: if true;
+      allow list, create, delete: if fullAccess();
+
+      allow update: if fullAccess()
+        || (
+          signedIn()
+          && resource.data.used == false
+          && request.resource.data.diff(resource.data).changedKeys()
+            .hasOnly(['used', 'usedByUid', 'usedByEmail', 'usedAt'])
+          && request.resource.data.used == true
+          && request.resource.data.usedByUid == request.auth.uid
+        );
+    }
+
+    match /servicos/{serviceId} {
+      allow read: if fullAccess()
+        || (mountingAccess() && resource.data.assignedMountingUid == request.auth.uid);
+
+      allow create, delete: if fullAccess();
+
+      allow update: if fullAccess()
+        || (
+          mountingAccess()
+          && resource.data.assignedMountingUid == request.auth.uid
+          && request.resource.data.assignedMountingUid == request.auth.uid
+          && request.resource.data.diff(resource.data).changedKeys()
+            .hasOnly(['mounting', 'updatedAt'])
+        );
+    }
+  }
+}
