@@ -554,7 +554,11 @@ function showLogin() {
   dom.logoutButton.hidden = true;
   dom.userName.textContent = "Aguardando login";
   if (state.unsubscribeServices) {
-    state.unsubscribeServices();
+    if (Array.isArray(state.unsubscribeServices)) {
+      state.unsubscribeServices.forEach((unsubscribe) => unsubscribe());
+    } else {
+      state.unsubscribeServices();
+    }
     state.unsubscribeServices = null;
   }
   if (state.unsubscribeTeam) {
@@ -574,10 +578,27 @@ function showLogin() {
 
 function subscribeServices() {
   if (state.unsubscribeServices) state.unsubscribeServices();
+  if (Array.isArray(state.unsubscribeServices)) {
+    state.unsubscribeServices.forEach((unsubscribe) => unsubscribe());
+    state.unsubscribeServices = null;
+  }
+  if (panelMode) {
+    const byToken = query(collection(db, servicesCollection), where("assignedMountingToken", "==", panelToken));
+    const byLegacyUid = query(collection(db, servicesCollection), where("assignedMountingUid", "==", panelToken));
+    const buckets = new Map();
+    const sync = (snapshot) => {
+      snapshot.docs.forEach((item) => buckets.set(item.id, { id: item.id, ...item.data() }));
+      state.services = Array.from(buckets.values());
+      render();
+    };
+    state.unsubscribeServices = [
+      onSnapshot(byToken, sync, (error) => showAuthMessage(`Erro ao ler OS: ${error.message}`, true)),
+      onSnapshot(byLegacyUid, sync, (error) => showAuthMessage(`Erro ao ler OS: ${error.message}`, true)),
+    ];
+    return;
+  }
   const q =
-    panelMode
-      ? query(collection(db, servicesCollection), where("assignedMountingToken", "==", panelToken))
-      : state.profile?.perfil === "montagem"
+    state.profile?.perfil === "montagem"
       ? query(collection(db, servicesCollection), where("assignedMountingUid", "==", state.authUser.uid))
       : query(collection(db, servicesCollection));
   state.unsubscribeServices = onSnapshot(

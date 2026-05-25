@@ -31,8 +31,14 @@ service cloud.firestore {
     }
 
     function hasPanelToken() {
-      return resource.data.keys().hasAll(['assignedMountingToken'])
-        && resource.data.assignedMountingToken != '';
+      return (
+          resource.data.keys().hasAll(['assignedMountingToken'])
+          && resource.data.assignedMountingToken != ''
+        )
+        || (
+          resource.data.keys().hasAll(['assignedMountingUid'])
+          && resource.data.assignedMountingUid != ''
+        );
     }
 
     match /usuarios/{uid} {
@@ -68,7 +74,10 @@ service cloud.firestore {
         || (
           !signedIn()
           && hasPanelToken()
-          && request.resource.data.assignedMountingToken == resource.data.assignedMountingToken
+          && (
+            request.resource.data.assignedMountingToken == resource.data.assignedMountingToken
+            || request.resource.data.assignedMountingUid == resource.data.assignedMountingUid
+          )
           && request.resource.data.diff(resource.data).changedKeys()
             .hasOnly(['mounting', 'updatedAt'])
         );
